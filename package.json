@@ -1,0 +1,64 @@
+{
+  "name": "queue-opd",
+  "version": "1.0.0",
+  "description": "Queue Management System for OPD",
+  "main": "out/main/main.js",
+  "scripts": {
+    "dev": "electron-vite build && node launch.js",
+    "build": "electron-vite build",
+    "preview": "electron-vite build && node launch.js",
+    "launch": "node launch.js",
+    "web": "node server/index.js",
+    "build:web": "electron-vite build && node server/index.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "keywords": [
+    "queue",
+    "opd",
+    "hospital"
+  ],
+  "author": "BMS",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/md5": "^2.3.5",
+    "@types/node": "^20.0.0",
+    "@types/pg": "^8.11.6",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.0.0",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.3.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "cross-env": "^10.1.0",
+    "express": "^5.2.1",
+    "md5": "^2.3.0",
+    "mysql2": "^3.10.0",
+    "pg": "^8.12.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "react-router-dom": "^6.24.0",
+    "ws": "^8.21.0"
+  },
+  "build": {
+    "appId": "com.bms.queue-opd",
+    "productName": "Queue OPD",
+    "win": {
+      "target": "nsis",
+      "icon": "resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ]
+  }
+}

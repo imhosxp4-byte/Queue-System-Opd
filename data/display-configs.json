@@ -1,0 +1,34 @@
+[
+  {
+    "name": "หน้าจอใหม่",
+    "bgColor": "#0A1929",
+    "textColor": "#FFFFFF",
+    "queueColor": "#00BCD4",
+    "font": "Sarabun",
+    "fontSize": 120,
+    "title": "ระบบคิวผู้ป่วยนอก",
+    "subTitle": "OPD Queue System",
+    "showClock": true,
+    "queueBgColor": "rgba(0,188,212,0.15)",
+    "showHistory": true,
+    "animationType": "scale",
+    "soundEnabled": false,
+    "id": "1779942389874"
+  },
+  {
+    "name": "หน้าจอใหม่AAAAAAA",
+    "bgColor": "#0A1929",
+    "textColor": "#FFFFFF",
+    "queueColor": "#00BCD4",
+    "font": "Sarabun",
+    "fontSize": 120,
+    "title": "ระบบคิวผู้ป่วยนอกAAAAAAAA",
+    "subTitle": "OPD Queue System",
+    "showClock": true,
+    "queueBgColor": "rgba(0,188,212,0.15)",
+    "showHistory": true,
+    "animationType": "scale",
+    "soundEnabled": false,
+    "id": "1780392612652"
+  }
+]
