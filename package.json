@@ -71,7 +71,8 @@
       "uninstallDisplayName": "Queue System OPD",
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true,
-      "perMachine": false
+      "perMachine": true,
+      "include": "build/installer.nsh"
     },
     "files": [
       "out/**/*",
