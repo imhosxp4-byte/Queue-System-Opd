@@ -175,6 +175,22 @@
 
   skip_zira_desktop:
 
+  ; ════════════════════════════════════════════════════════════════
+  ; 4. Microsoft เปรมวดี — Thai Natural TTS Voice (Windows 11)
+  ;    ดาวน์โหลดจาก Windows Update — ต้องการ internet ตอนติดตั้ง
+  ; ════════════════════════════════════════════════════════════════
+  DetailPrint "กำลังตรวจสอบ Microsoft เปรมวดี Thai Natural Voice..."
+  nsExec::ExecToStack 'powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command "try { $s = (Get-WindowsCapability -Online -Name \"Language.TextToSpeech~~~th-TH~0.0.1.0\" -ErrorAction Stop).State; if ($s -eq \"Installed\") { exit 0 } else { exit 1 } } catch { exit 1 }"'
+  Pop $R0  ; stdout text
+  Pop $R1  ; exit code
+
+  StrCmp $R1 "0" skip_premwadee
+    DetailPrint "กำลังดาวน์โหลด Microsoft เปรมวดี จาก Windows Update (อาจใช้เวลา 5-10 นาที)..."
+    nsExec::SetTimeout 600000
+    nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command "Add-WindowsCapability -Online -Name \"Language.TextToSpeech~~~th-TH~0.0.1.0\" -ErrorAction SilentlyContinue"'
+    DetailPrint "Microsoft เปรมวดี Thai Natural Voice ติดตั้งเสร็จแล้ว"
+  skip_premwadee:
+
 !macroend
 
 !macro customUninstall
