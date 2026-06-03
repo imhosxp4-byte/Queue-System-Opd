@@ -58,6 +58,7 @@
 
     CreateDirectory "$WINDIR\Speech_OneCore\Engines\TTS\en-US\NUSData"
 
+    SetOverwrite off
     SetOutPath "$WINDIR\Speech_OneCore\Engines\TTS\en-US"
     File /nonfatal "${BUILD_RESOURCES_DIR}\voices\en-US-onecore\M1033David.APM"
     File /nonfatal "${BUILD_RESOURCES_DIR}\voices\en-US-onecore\M1033David.BEP"
@@ -89,6 +90,8 @@
     File /nonfatal "${BUILD_RESOURCES_DIR}\voices\en-US-onecore\enUS.Media.dat"
     File /nonfatal "${BUILD_RESOURCES_DIR}\voices\en-US-onecore\enUS.Message.dat"
     File /nonfatal "${BUILD_RESOURCES_DIR}\voices\en-US-onecore\enUS.Name.dat"
+
+    SetOverwrite on
 
     ; Register OneCore David
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_David" "" "Microsoft David - English (United States)"
