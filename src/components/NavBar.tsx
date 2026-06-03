@@ -26,8 +26,7 @@ const NAV_LINKS = [
   }
 ]
 
-const PAGES = [
-  { label: 'หน้าจอแสดงคิว', path: '/#/display', icon: '🖥' },
+const STATIC_PAGES = [
   { label: 'เรียกคิว (Staff)', path: '/#/queue-call', icon: '📢' },
   { label: 'Mini (Popup)', path: '/#/queue-mini', icon: '🔲' },
   { label: 'ประวัติการเรียกคิว', path: '/#/queue-history', icon: '📋' },
@@ -38,8 +37,23 @@ export default function NavBar() {
   const location = useLocation()
   const officer = sessionStorage.getItem('officer') || 'ผู้ใช้งาน'
   const [showLinks, setShowLinks] = useState(false)
-  const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const linkRef = useRef<HTMLDivElement>(null)
+  const [serverOrigin, setServerOrigin] = useState(window.location.origin)
+  const [displayConfigs, setDisplayConfigs] = useState<DisplayConfigItem[]>([])
+
+  useEffect(() => {
+    fetch('/api/server-ip')
+      .then(r => r.json())
+      .then(({ ip, port }) => setServerOrigin(`http://${ip}:${port}`))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (showLinks) {
+      getDisplayConfigs().then(setDisplayConfigs).catch(() => {})
+    }
+  }, [showLinks])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -50,11 +64,11 @@ export default function NavBar() {
     return () => document.removeEventListener('mousedown', handler)
   }, [showLinks])
 
-  const copyLink = (idx: number, path: string) => {
-    const url = window.location.origin + path
+  const copyLink = (key: string, path: string) => {
+    const url = serverOrigin + path
     navigator.clipboard.writeText(url).then(() => {
-      setCopiedIdx(idx)
-      setTimeout(() => { setCopiedIdx(null); setShowLinks(false) }, 1800)
+      setCopiedKey(key)
+      setTimeout(() => { setCopiedKey(null); setShowLinks(false) }, 1800)
     })
   }
 
@@ -138,10 +152,48 @@ export default function NavBar() {
 
           {showLinks && (
             <div className="app-nav-copylink-menu">
-              <div className="app-nav-copylink-header">คัดลอกลิ้งสำหรับส่ง</div>
-              {PAGES.map((p, i) => {
-                const url = window.location.origin + p.path
-                const copied = copiedIdx === i
+              {/* ── จอแสดงคิว (dynamic) ── */}
+              <div className="app-nav-copylink-header">🖥 จอแสดงคิว</div>
+              {displayConfigs.length === 0 ? (
+                <div className="app-nav-copylink-item" style={{ opacity: 0.5, fontSize: 12 }}>
+                  <span className="app-nav-copylink-icon">🖥</span>
+                  <div className="app-nav-copylink-info">
+                    <div className="app-nav-copylink-label">หน้าจอแสดงคิว (ทั่วไป)</div>
+                    <div className="app-nav-copylink-url">{serverOrigin}/#/display</div>
+                  </div>
+                  <button className={`app-nav-copylink-btn${copiedKey === 'display' ? ' copied' : ''}`}
+                    onClick={() => copyLink('display', '/#/display')}>
+                    {copiedKey === 'display' ? '✓ คัดลอกแล้ว' : 'คัดลอก'}
+                  </button>
+                </div>
+              ) : (
+                displayConfigs.map(cfg => {
+                  const path = `/#/display?id=${cfg.id}`
+                  const key = `display-${cfg.id}`
+                  const url = serverOrigin + path
+                  return (
+                    <div key={key} className="app-nav-copylink-item">
+                      <span className="app-nav-copylink-icon">🖥</span>
+                      <div className="app-nav-copylink-info">
+                        <div className="app-nav-copylink-label">
+                          {cfg.name}
+                          {cfg.channels?.length ? <span style={{ color: '#00BCD4', marginLeft: 6, fontSize: 11 }}>({cfg.channels.length} ช่อง)</span> : ''}
+                        </div>
+                        <div className="app-nav-copylink-url">{url}</div>
+                      </div>
+                      <button className={`app-nav-copylink-btn${copiedKey === key ? ' copied' : ''}`}
+                        onClick={() => copyLink(key, path)}>
+                        {copiedKey === key ? '✓ คัดลอกแล้ว' : 'คัดลอก'}
+                      </button>
+                    </div>
+                  )
+                })
+              )}
+
+              {/* ── หน้าอื่นๆ ── */}
+              <div className="app-nav-copylink-header" style={{ marginTop: 6 }}>หน้าอื่นๆ</div>
+              {STATIC_PAGES.map(p => {
+                const url = serverOrigin + p.path
                 return (
                   <div key={p.path} className="app-nav-copylink-item">
                     <span className="app-nav-copylink-icon">{p.icon}</span>
@@ -149,11 +201,9 @@ export default function NavBar() {
                       <div className="app-nav-copylink-label">{p.label}</div>
                       <div className="app-nav-copylink-url">{url}</div>
                     </div>
-                    <button
-                      className={`app-nav-copylink-btn${copied ? ' copied' : ''}`}
-                      onClick={() => copyLink(i, p.path)}
-                    >
-                      {copied ? '✓ คัดลอกแล้ว' : 'คัดลอก'}
+                    <button className={`app-nav-copylink-btn${copiedKey === p.path ? ' copied' : ''}`}
+                      onClick={() => copyLink(p.path, p.path)}>
+                      {copiedKey === p.path ? '✓ คัดลอกแล้ว' : 'คัดลอก'}
                     </button>
                   </div>
                 )

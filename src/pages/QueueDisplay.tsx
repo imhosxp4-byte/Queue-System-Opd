@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import {
-  onDisplayConfig, onQueueCalled, onQueueStatusChanged, updateDisplayConfig,
+  onDisplayConfig, onQueueCalled, onQueueStatusChanged, onQueueAudio, updateDisplayConfig,
   getSystemFonts, getServicePoints, getCallsToday, getQueueList,
-  getQDDefaultConfig, saveQDDefaultConfig,
+  getQDDefaultConfig, saveQDDefaultConfig, getTTSVoices, getDisplayConfigById,
+  getDisplayQDConfig, saveDisplayQDConfig,
   type CallEntry
 } from '../lib/api'
 import './QueueDisplay.css'
@@ -22,6 +23,10 @@ interface QDConfig {
   tableHeaderColor: string
   spColumnBg: string
   spColumnColor: string
+  spHeaderBg: string
+  spHeaderColor: string
+  showNoShowPanel: boolean
+  noShowItemHeight: number
   queueBg: string
   queueColor: string
   spDisplayNames: Record<string, string>
@@ -55,12 +60,18 @@ interface QDConfig {
   hiddenSPs: string[]
   displayStation: string
   filterDepts: string[]
+  // Display identity (set from URL ?id=)
+  displayConfigId: string
+  displayConfigName: string
+  displayChannels: string[]
   // TTS (Text-to-Speech)
   ttsEnabled: boolean
+  ttsSource: 'browser' | 'server'
   ttsPrefix1: string
   ttsMiddle: string
   ttsSuffix: string
-  ttsVoiceName: string
+  ttsVoiceName: string       // browser voice
+  ttsServerVoiceName: string // Windows SAPI voice (server mode)
   ttsRate: number
   ttsPitch: number
   ttsVolume: number
@@ -79,6 +90,10 @@ const DEFAULT: QDConfig = {
   tableHeaderColor: '#ffffff',
   spColumnBg: '#f8f9fa',
   spColumnColor: '#1a1a2e',
+  spHeaderBg: '#1a237e',
+  spHeaderColor: '#ffffff',
+  showNoShowPanel: true,
+  noShowItemHeight: 80,
   queueBg: '#ffffff',
   queueColor: '#1565c0',
   spDisplayNames: {},
@@ -108,17 +123,33 @@ const DEFAULT: QDConfig = {
   hiddenSPs: [],
   displayStation: '',
   filterDepts: [],
+  displayConfigId: '',
+  displayConfigName: '',
+  displayChannels: [],
   ttsEnabled: false,
+  ttsSource: 'browser',
   ttsPrefix1: 'ขอเชิญลำดับ',
   ttsMiddle: 'ที่โต๊ะซักประวัติหมายเลข',
   ttsSuffix: 'ค่ะ',
   ttsVoiceName: '',
+  ttsServerVoiceName: '',
   ttsRate: 0.9,
   ttsPitch: 1.1,
   ttsVolume: 1.0,
 }
 
-const STORAGE_KEY = 'qd-config'
+// Read display config ID from URL hash: /#/display?id=XXX
+function getDisplayIdFromURL(): string {
+  try {
+    const hash = window.location.hash // e.g. "#/display?id=12345"
+    const qIdx = hash.indexOf('?')
+    if (qIdx === -1) return ''
+    return new URLSearchParams(hash.slice(qIdx + 1)).get('id') || ''
+  } catch { return '' }
+}
+
+const URL_DISPLAY_ID = getDisplayIdFromURL()
+const STORAGE_KEY = URL_DISPLAY_ID ? `qd-config-${URL_DISPLAY_ID}` : 'qd-config'
 
 function fixConfig(merged: Record<string, unknown>): QDConfig {
   const result = { ...DEFAULT, ...merged } as QDConfig
@@ -158,6 +189,8 @@ export default function QueueDisplayPage() {
   const isResizing = useRef(false)
   const configRef = useRef(config)
   const [ttsVoices, setTtsVoices] = useState<SpeechSynthesisVoice[]>([])
+  const [serverTtsVoices, setServerTtsVoices] = useState<string[]>([])
+  const [loadingVoices, setLoadingVoices] = useState(false)
   const resizeStartX = useRef(0)
   const resizeStartW = useRef(0)
 
@@ -169,14 +202,53 @@ export default function QueueDisplayPage() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(config)) } catch {}
   }, [config])
 
-  // On first load with no localStorage: apply server default
+  // Load config from server on startup
+  // - Display with ?id= → load from per-display config (isolated)
+  // - Display without id → load from global qd-default-config
   useEffect(() => {
-    if (!localStorage.getItem(STORAGE_KEY)) {
-      getQDDefaultConfig().then(cfg => {
-        if (cfg) setConfig(fixConfig(cfg))
-      })
-    }
+    const loader = URL_DISPLAY_ID
+      ? getDisplayQDConfig(URL_DISPLAY_ID)
+      : getQDDefaultConfig()
+
+    loader.then(serverCfg => {
+      if (!serverCfg) {
+        if (!localStorage.getItem(STORAGE_KEY)) setConfig({ ...DEFAULT })
+        return
+      }
+      if (!localStorage.getItem(STORAGE_KEY)) {
+        setConfig(fixConfig(serverCfg))
+      } else {
+        // Sync all settings from server (per-display config is authoritative)
+        setConfig(c => ({ ...fixConfig(serverCfg), displayConfigId: c.displayConfigId, displayConfigName: c.displayConfigName, displayChannels: c.displayChannels }))
+      }
+    })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load channels + name from DisplayConfigItem when opened with ?id=
+  useEffect(() => {
+    if (!URL_DISPLAY_ID) return
+    getDisplayConfigById(URL_DISPLAY_ID).then(dcfg => {
+      if (!dcfg) return
+      const channels = dcfg.channels || []
+      setConfig(c => ({ ...c, displayConfigId: URL_DISPLAY_ID, displayConfigName: dcfg.name || '', displayChannels: channels }))
+      if (dcfg.name) document.title = `จอ: ${dcfg.name} — Queue OPD`
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When settings panel opens: re-sync TTS config from server + reload server voices
+  const TTS_KEYS_CONST: (keyof QDConfig)[] = [
+    'ttsEnabled', 'ttsSource', 'ttsPrefix1', 'ttsMiddle', 'ttsSuffix',
+    'ttsVoiceName', 'ttsServerVoiceName', 'ttsRate', 'ttsPitch', 'ttsVolume', 'soundEnabled'
+  ]
+  useEffect(() => {
+    if (!showSettings) return
+    refreshServerVoices()
+    const loader = URL_DISPLAY_ID ? getDisplayQDConfig(URL_DISPLAY_ID) : getQDDefaultConfig()
+    loader.then(serverCfg => {
+      if (!serverCfg) return
+      setConfig(c => ({ ...fixConfig(serverCfg), displayConfigId: c.displayConfigId, displayConfigName: c.displayConfigName, displayChannels: c.displayChannels }))
+    })
+  }, [showSettings]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load TTS voices (Web Speech API)
   // Electron's voiceschanged event is unreliable — poll until voices are available
@@ -199,6 +271,13 @@ export default function QueueDisplayPage() {
       clearInterval(interval)
     }
   }, [])
+
+  // Load server TTS voices (Windows SAPI)
+  const refreshServerVoices = () => {
+    setLoadingVoices(true)
+    getTTSVoices().then(v => { setServerTtsVoices(v); setLoadingVoices(false) }).catch(() => setLoadingVoices(false))
+  }
+  useEffect(() => { refreshServerVoices() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load service points
   useEffect(() => {
@@ -232,10 +311,13 @@ export default function QueueDisplayPage() {
   // WebSocket: real-time queue call events
   useEffect(() => {
     const off = onQueueCalled(data => {
+      const cfg = configRef.current
+      // Filter: if this display has an ID, only accept calls for this display (or untagged calls)
+      if (cfg.displayConfigId && data.displayConfigId && data.displayConfigId !== cfg.displayConfigId) return
+
       setSpQueues(prev => ({ ...prev, [data.servicePoint]: data.queueNo }))
       setRowAnimKeys(prev => ({ ...prev, [data.servicePoint]: (prev[data.servicePoint] || 0) + 1 }))
-      const cfg = configRef.current
-      if (cfg.ttsEnabled) {
+      if (cfg.ttsEnabled && cfg.ttsSource !== 'server') {
         playTTS(data.queueNo, data.servicePoint, cfg)
       } else if (cfg.soundEnabled) {
         playBeep()
@@ -252,6 +334,18 @@ export default function QueueDisplayPage() {
     })
     return off
   }, [])
+
+  // WebSocket: async TTS audio ready — play when received
+  useEffect(() => {
+    const off = onQueueAudio(data => {
+      const cfg = configRef.current
+      if (cfg.displayConfigId && data.displayConfigId && data.displayConfigId !== cfg.displayConfigId) return
+      const audio = new Audio(data.audioUrl)
+      audio.volume = cfg.ttsVolume ?? 1
+      audio.play().catch(() => {})
+    })
+    return off
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Display config broadcast (from admin panel)
   useEffect(() => {
@@ -325,20 +419,29 @@ export default function QueueDisplayPage() {
   }
 
   const saveConfig = async () => {
-    await updateDisplayConfig(config as unknown as DisplayConfig)
+    if (URL_DISPLAY_ID) {
+      await saveDisplayQDConfig(URL_DISPLAY_ID, config)
+    } else {
+      await updateDisplayConfig(config as unknown as DisplayConfig)
+    }
     setShowSettings(false)
   }
 
   const saveAsDefault = async () => {
-    await saveQDDefaultConfig(config)
-    setSaveDefaultMsg('บันทึกเป็นค่าเริ่มต้นสำเร็จ ✓')
+    if (URL_DISPLAY_ID) {
+      await saveDisplayQDConfig(URL_DISPLAY_ID, config)
+      setSaveDefaultMsg('บันทึกการตั้งค่าจอนี้สำเร็จ ✓')
+    } else {
+      await saveQDDefaultConfig(config)
+      setSaveDefaultMsg('บันทึกเป็นค่าเริ่มต้นสำเร็จ ✓')
+    }
     setTimeout(() => setSaveDefaultMsg(null), 2500)
   }
 
-  // Derived
-  const visibleSPs = servicePoints.filter(
-    sp => !config.hiddenSPs.includes(sp.id) && !config.hiddenSPs.includes(sp.name)
-  )
+  // Derived: use display-specific channels if this display has an ID, otherwise global SPs
+  const visibleSPs = config.displayConfigId && config.displayChannels.length > 0
+    ? config.displayChannels.map(ch => ({ id: ch, name: ch }))
+    : servicePoints.filter(sp => !config.hiddenSPs.includes(sp.id) && !config.hiddenSPs.includes(sp.name))
 
   const toggleFilterDept = (dept: string) =>
     setConfig(c => ({
@@ -382,6 +485,12 @@ export default function QueueDisplayPage() {
         <span className="qd-title">
           {config.title}
           {config.displayStation && <span className="qd-station-tag">{config.displayStation}</span>}
+          {config.displayConfigId && (
+            <span className="qd-station-tag" style={{ background: 'rgba(0,188,212,0.3)', marginLeft: 8, fontSize: '0.85em', fontWeight: 700, letterSpacing: 0.5 }}>
+              📺 {config.displayConfigName || config.displayConfigId}
+              {config.displayChannels.length > 0 && <span style={{ opacity: 0.7, fontWeight: 400, marginLeft: 5 }}>({config.displayChannels.length} ช่อง)</span>}
+            </span>
+          )}
         </span>
         <div className="qd-controls">
           {config.showClock && (
@@ -400,6 +509,14 @@ export default function QueueDisplayPage() {
             <span>{config.fontSize.toFixed(1)}</span>
             <button onClick={() => setConfig(c => ({ ...c, fontSize: Math.min(20, +(c.fontSize + 0.5).toFixed(1)) }))}>+</button>
           </div>
+          <button
+            className={`qd-hdr-btn${config.showNoShowPanel ? ' on' : ''}`}
+            onClick={() => setConfig(c => ({ ...c, showNoShowPanel: !c.showNoShowPanel }))}
+            title={config.showNoShowPanel ? 'ซ่อนคิวไม่มา' : 'แสดงคิวไม่มา'}
+            style={{ background: config.showNoShowPanel ? 'rgba(239,83,80,0.25)' : 'rgba(255,255,255,0.1)' }}
+          >
+            {config.showNoShowPanel ? '🔴' : '⚫'} ไม่มา
+          </button>
           <button className="qd-hdr-btn" onClick={openSettings}>⚙ ตั้งค่าหน้าจอ</button>
         </div>
       </header>
@@ -426,8 +543,8 @@ export default function QueueDisplayPage() {
                 style={{
                   width: config.spColumnWidth,
                   minWidth: config.spColumnWidth,
-                  background: config.spColumnBg,
-                  color: config.spColumnColor,
+                  background: config.spHeaderBg,
+                  color: config.spHeaderColor,
                   borderRight: border,
                   borderBottom: border,
                 }}
@@ -488,7 +605,7 @@ export default function QueueDisplayPage() {
         </div>
 
         {/* ── Right panel: เรียกแล้วไม่มา ──────────────────── */}
-        <div
+        {config.showNoShowPanel && <div
           className="qd-right"
           style={{ background: config.rightPanelBg, width: config.rightPanelWidth, minWidth: config.rightPanelWidth }}
         >
@@ -510,7 +627,8 @@ export default function QueueDisplayPage() {
                     ? `${config.rightPanelFontSize}vw`
                     : `${Math.max(1.5, config.rightPanelFontSize * 0.58).toFixed(1)}vw`
                   return (
-                    <div key={item.vn} className={`qd-noshow-item${isFirst ? ' qd-noshow-first' : ''}`}>
+                    <div key={item.vn} className={`qd-noshow-item${isFirst ? ' qd-noshow-first' : ''}`}
+                      style={{ height: config.noShowItemHeight, minHeight: config.noShowItemHeight }}>
                       <div className="qd-noshow-queue">
                         {badge && (
                           <span className={`qd-right-badge${isFirst ? ' large' : ''}`}>{badge}</span>
@@ -528,7 +646,7 @@ export default function QueueDisplayPage() {
               </div>
             )}
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* ─── FOOTER ──────────────────────────────────────────── */}
@@ -540,7 +658,7 @@ export default function QueueDisplayPage() {
 
       {/* ─── SETTINGS PANEL ──────────────────────────────────── */}
       {showSettings && (
-        <div className="qd-overlay" onClick={() => setShowSettings(false)}>
+        <div className="qd-overlay">
           <div className="qd-panel" onClick={e => e.stopPropagation()} style={{ fontFamily: fontFace }}>
             <div className="qd-panel-hd">
               <h3>⚙ ตั้งค่าการแสดงผล</h3>
@@ -615,10 +733,16 @@ export default function QueueDisplayPage() {
               <SRow label="สีข้อความหัวตาราง">
                 <CInput value={config.tableHeaderColor} onChange={v => setConfig(c => ({ ...c, tableHeaderColor: v }))} />
               </SRow>
-              <SRow label="สีพื้นคอลัมน์ช่องเรียก">
+              <SRow label="สีพื้นหัวคอลัมน์ช่องบริการ">
+                <CInput value={config.spHeaderBg} onChange={v => setConfig(c => ({ ...c, spHeaderBg: v }))} />
+              </SRow>
+              <SRow label="สีตัวอักษรหัวคอลัมน์ช่องบริการ">
+                <CInput value={config.spHeaderColor} onChange={v => setConfig(c => ({ ...c, spHeaderColor: v }))} />
+              </SRow>
+              <SRow label="สีพื้นคอลัมน์ช่องเรียก (แถวข้อมูล)">
                 <CInput value={config.spColumnBg} onChange={v => setConfig(c => ({ ...c, spColumnBg: v }))} />
               </SRow>
-              <SRow label="สีตัวอักษรช่องเรียก">
+              <SRow label="สีตัวอักษรช่องเรียก (แถวข้อมูล)">
                 <CInput value={config.spColumnColor} onChange={v => setConfig(c => ({ ...c, spColumnColor: v }))} />
               </SRow>
               <SRow label="สีพื้นช่องแสดงคิว">
@@ -701,6 +825,11 @@ export default function QueueDisplayPage() {
                   onChange={e => setConfig(c => ({ ...c, rightPanelMaxItems: Number(e.target.value) }))}
                   className="qd-slider" />
               </SRow>
+              <SRow label={`ความสูงต่อรายการ: ${config.noShowItemHeight}px`}>
+                <input type="range" min="40" max="200" step="4" value={config.noShowItemHeight}
+                  onChange={e => setConfig(c => ({ ...c, noShowItemHeight: Number(e.target.value) }))}
+                  className="qd-slider" />
+              </SRow>
               <SRow label="สีพื้นหลัง">
                 <CInput value={config.rightPanelBg} onChange={v => setConfig(c => ({ ...c, rightPanelBg: v }))} />
               </SRow>
@@ -750,6 +879,26 @@ export default function QueueDisplayPage() {
               </SRow>
 
               {config.ttsEnabled && <>
+                <SRow label="แหล่งเสียง">
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      className={`qd-tts-src-btn${config.ttsSource !== 'server' ? ' active' : ''}`}
+                      onClick={() => setConfig(c => ({ ...c, ttsSource: 'browser' }))}
+                    >🌐 Browser (เครื่องนี้)</button>
+                    <button
+                      className={`qd-tts-src-btn${config.ttsSource === 'server' ? ' active' : ''}`}
+                      onClick={() => setConfig(c => ({ ...c, ttsSource: 'server' }))}
+                    >🖥 Server (Host)</button>
+                  </div>
+                </SRow>
+
+                {config.ttsSource === 'server' && (
+                  <div className="qd-tts-warn" style={{ background: 'rgba(0,188,100,0.12)', borderLeft: '3px solid #00c864' }}>
+                    ✅ เสียงจะสังเคราะห์บนเครื่อง Host แล้วส่งไปทุกเครื่อง
+                    {serverTtsVoices.length === 0 && <><br/><small>⚠ ไม่พบเสียง SAPI บน Host — ติดตั้ง Thai Language Pack</small></>}
+                  </div>
+                )}
+
                 <div className="qd-tts-preview-wrap">
                   <div className="qd-tts-template">
                     <span className="qd-tts-seg edit">{config.ttsPrefix1 || '…'}</span>
@@ -775,6 +924,27 @@ export default function QueueDisplayPage() {
                 </SRow>
 
                 <SRow label="เสียง (Voice)">
+                  {config.ttsSource === 'server' ? (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <select className="input" value={config.ttsServerVoiceName}
+                        onChange={e => setConfig(c => ({ ...c, ttsServerVoiceName: e.target.value }))}
+                        disabled={loadingVoices}>
+                        <option value="">{loadingVoices ? 'กำลังโหลด…' : serverTtsVoices.length === 0 ? 'ไม่พบเสียง' : 'อัตโนมัติ (อาจารา ไทย)'}</option>
+                        {serverTtsVoices.map(v => {
+                          const labels: Record<string, string> = {
+                            'th-TH-AcharaNeural':    '🇹🇭 อาจารา (ไทย หญิง) — Neural',
+                            'th-TH-NiwatNeural':     '🇹🇭 นิวัตร (ไทย ชาย) — Neural',
+                            'th-TH-PremwadeeNeural': '🇹🇭 เปรมวดี (ไทย หญิง) — Neural',
+                          }
+                          return <option key={v} value={v}>{labels[v] ?? v}</option>
+                        })}
+                      </select>
+                      <button className="qd-tts-play-btn" onClick={refreshServerVoices} disabled={loadingVoices}
+                        title="โหลดรายการเสียงใหม่" style={{ padding: '7px 10px', flexShrink: 0 }}>
+                        {loadingVoices ? '⟳' : '🔄'}
+                      </button>
+                    </div>
+                  ) : (
                   <select className="input" value={config.ttsVoiceName}
                     onChange={e => setConfig(c => ({ ...c, ttsVoiceName: e.target.value }))}>
                     <option value="">อัตโนมัติ (ไทย)</option>
@@ -797,6 +967,7 @@ export default function QueueDisplayPage() {
                       </optgroup>
                     )}
                   </select>
+                  )}
                 </SRow>
 
                 <SRow label={`ความเร็ว: ${config.ttsRate.toFixed(1)}x`}>
@@ -857,8 +1028,9 @@ export default function QueueDisplayPage() {
             <div className="qd-panel-ft">
               {saveDefaultMsg && <span className="qd-default-msg">{saveDefaultMsg}</span>}
               <button className="btn btn-ghost" onClick={() => setShowSettings(false)}>ยกเลิก</button>
-              <button className="btn qd-btn-default" onClick={saveAsDefault} title="บันทึกเป็นค่าเริ่มต้นของระบบ (ทุกเครื่อง)">
-                📌 ตั้งเป็นค่าเริ่มต้น
+              <button className="btn qd-btn-default" onClick={saveAsDefault}
+                title={URL_DISPLAY_ID ? `บันทึกการตั้งค่าเฉพาะจอนี้ (${config.displayConfigName || URL_DISPLAY_ID})` : 'บันทึกเป็นค่าเริ่มต้นของระบบ (ทุกเครื่อง)'}>
+                {URL_DISPLAY_ID ? '💾 บันทึกการตั้งค่าจอนี้' : '📌 ตั้งเป็นค่าเริ่มต้น'}
               </button>
               <button className="btn btn-primary" onClick={saveConfig}>💾 บันทึกและปิด</button>
             </div>

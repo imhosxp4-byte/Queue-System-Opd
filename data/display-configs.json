@@ -1,34 +1,43 @@
 [
   {
-    "name": "หน้าจอใหม่",
+    "id": "1779942389874",
+    "name": "ซักประวัติอายุกรรม",
     "bgColor": "#0A1929",
     "textColor": "#FFFFFF",
     "queueColor": "#00BCD4",
     "font": "Sarabun",
-    "fontSize": 120,
-    "title": "ระบบคิวผู้ป่วยนอก",
+    "fontSize": 150,
+    "title": "ระบบคิวผู้ป่วยนอก อายุรกรรม",
     "subTitle": "OPD Queue System",
     "showClock": true,
     "queueBgColor": "rgba(0,188,212,0.15)",
     "showHistory": true,
     "animationType": "scale",
     "soundEnabled": false,
-    "id": "1779942389874"
+    "channels": [
+      "1",
+      "2",
+      "3"
+    ]
   },
   {
-    "name": "หน้าจอใหม่AAAAAAA",
-    "bgColor": "#0A1929",
+    "id": "1780456207756",
+    "name": "ซักประวัติตรวจโรคทั่วไป",
+    "bgColor": "#bbdf07",
     "textColor": "#FFFFFF",
     "queueColor": "#00BCD4",
     "font": "Sarabun",
     "fontSize": 120,
-    "title": "ระบบคิวผู้ป่วยนอกAAAAAAAA",
-    "subTitle": "OPD Queue System",
+    "title": "ระบบคิวผู้ป่วยนอก-ตรวจโรคทั่วไป",
+    "subTitle": "GP",
     "showClock": true,
     "queueBgColor": "rgba(0,188,212,0.15)",
     "showHistory": true,
     "animationType": "scale",
-    "soundEnabled": false,
-    "id": "1780392612652"
+    "soundEnabled": true,
+    "channels": [
+      "1",
+      "2"
+    ]
   }
 ]

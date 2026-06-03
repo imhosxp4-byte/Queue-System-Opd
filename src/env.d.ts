@@ -48,6 +48,7 @@ interface DisplayConfig {
 interface DisplayConfigItem extends DisplayConfig {
   id: string
   name: string
+  channels?: string[]
 }
 
 interface Window {

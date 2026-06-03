@@ -15,9 +15,11 @@ const PORT = process.env.PORT || 3200
 const DATA_DIR = path.join(__dirname, '..', 'data')
 const SETTINGS_FILE = path.join(DATA_DIR, 'db-settings.json')
 const DISPLAY_CONFIGS_FILE = path.join(DATA_DIR, 'display-configs.json')
+const TTS_CACHE_DIR = path.join(DATA_DIR, 'tts-cache')
 
-// Ensure data dir exists
+// Ensure data dirs exist
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
+if (!fs.existsSync(TTS_CACHE_DIR)) fs.mkdirSync(TTS_CACHE_DIR, { recursive: true })
 
 // ─── Settings helpers ─────────────────────────────────────────────────────────
 
@@ -94,6 +96,112 @@ const RENDERER_DIR = path.join(__dirname, '..', 'out', 'renderer')
 if (fs.existsSync(RENDERER_DIR)) {
   app.use(express.static(RENDERER_DIR))
 }
+
+// Serve TTS audio cache
+app.use('/tts-audio', express.static(TTS_CACHE_DIR))
+
+// ─── Server-side TTS (Microsoft Edge Neural + SAPI fallback) ─────────────────
+
+const { exec } = require('child_process')
+const { MsEdgeTTS, OUTPUT_FORMAT, ProsodyOptions } = require('msedge-tts')
+
+// Edge Neural TTS voices with Thai support
+const EDGE_VOICES = [
+  { name: 'th-TH-AcharaNeural',   label: '🇹🇭 อาจารา (ไทย หญิง) — Neural' },
+  { name: 'th-TH-NiwatNeural',    label: '🇹🇭 นิวัตร (ไทย ชาย) — Neural' },
+  { name: 'th-TH-PremwadeeNeural',label: '🇹🇭 เปรมวดี (ไทย หญิง) — Neural' },
+]
+
+function cleanTTSCache(exceptFile) {
+  try {
+    const now = Date.now()
+    fs.readdirSync(TTS_CACHE_DIR).forEach(f => {
+      if (f === exceptFile) return
+      try {
+        if (now - fs.statSync(path.join(TTS_CACHE_DIR, f)).mtimeMs > 60000)
+          fs.unlinkSync(path.join(TTS_CACHE_DIR, f))
+      } catch {}
+    })
+  } catch {}
+}
+
+// Edge Neural TTS generation
+async function generateEdgeTTS(text, voiceName, rate) {
+  const voice = voiceName || 'th-TH-AcharaNeural'
+  const filename = `tts_${Date.now()}.mp3`
+  const filepath = path.join(TTS_CACHE_DIR, filename)
+
+  const tts = new MsEdgeTTS()
+  await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3)
+  const prosody = new ProsodyOptions()
+  prosody.rate = Number(rate) // 0.5 = ช้า, 1.0 = ปกติ, 2.0 = เร็ว
+  const { audioStream } = tts.toStream(text, prosody)
+
+  await new Promise((resolve, reject) => {
+    const ws = fs.createWriteStream(filepath)
+    audioStream.pipe(ws)
+    ws.on('finish', resolve)
+    ws.on('error', reject)
+    audioStream.on('error', reject)
+  })
+  cleanTTSCache(filename)
+  return `/tts-audio/${filename}`
+}
+
+// SAPI fallback (Windows built-in voices)
+function generateSAPITTS(text, voiceName, rate) {
+  return new Promise((resolve, reject) => {
+    const filename = `tts_${Date.now()}.wav`
+    const filepath = path.join(TTS_CACHE_DIR, filename)
+    const sapiRate = Math.max(-10, Math.min(10, Math.round((Number(rate) - 1) * 7)))
+    const script = [
+      'Add-Type -AssemblyName System.Speech',
+      '$s = New-Object System.Speech.Synthesis.SpeechSynthesizer',
+      voiceName ? `$s.SelectVoice('${voiceName.replace(/'/g, "''")}')` : '',
+      `$s.Rate = ${sapiRate}`,
+      `$s.SetOutputToWaveFile('${filepath.replace(/\\/g, '\\\\')}')`,
+      `$s.Speak('${text.replace(/'/g, "''")}')`,
+      '$s.Dispose()'
+    ].filter(Boolean).join('\n')
+    const encoded = Buffer.from(script, 'utf16le').toString('base64')
+    exec(`powershell -NoProfile -NonInteractive -EncodedCommand ${encoded}`,
+      { timeout: 15000 },
+      (err) => {
+        if (err || !fs.existsSync(filepath)) return reject(err || new Error('WAV not created'))
+        cleanTTSCache(filename)
+        resolve(`/tts-audio/${filename}`)
+      }
+    )
+  })
+}
+
+// Main TTS generator: Edge Neural first, SAPI as fallback
+async function generateServerTTS(text, voiceName, rate) {
+  const isEdgeVoice = EDGE_VOICES.some(v => v.name === voiceName) || !voiceName
+  if (isEdgeVoice) {
+    return generateEdgeTTS(text, voiceName || 'th-TH-AcharaNeural', rate)
+  }
+  return generateSAPITTS(text, voiceName, rate)
+}
+
+// Return combined voice list: Edge Neural + SAPI
+app.get('/api/tts/voices', (req, res) => {
+  const script = [
+    'Add-Type -AssemblyName System.Speech',
+    '(New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name }'
+  ].join('\n')
+  const encoded = Buffer.from(script, 'utf16le').toString('base64')
+  exec(`powershell -NoProfile -NonInteractive -EncodedCommand ${encoded}`,
+    { timeout: 10000 },
+    (err, stdout) => {
+      const sapiVoices = err ? [] : stdout.split('\n').map(v => v.trim()).filter(Boolean)
+      // Edge voices first (Thai Neural), then SAPI voices
+      const edgeList = EDGE_VOICES.map(v => v.name)
+      const combined = [...edgeList, ...sapiVoices.filter(v => !edgeList.includes(v))]
+      res.json(combined)
+    }
+  )
+})
 
 // ─── API: Settings ────────────────────────────────────────────────────────────
 
@@ -238,6 +346,54 @@ LEFT JOIN opd_qs_room oq ON oq.opd_qs_room_id = os.opd_qs_room_id
 WHERE ov.vstdate = $1 AND ov.vn IS NOT NULL
 ORDER BY k.department, os.queue_slot_number`
 
+// ─── HOSxP Queue + cur_dep (slot_cur mode) ────────────────────────────────────
+
+const SLOT_CUR_SQL_MYSQL = `
+SELECT ov.vstdate, ov.vsttime,
+    oq.opd_qs_room_name AS queue_type,
+    os.queue_slot_number AS queue_slot,
+    ov.oqueue AS queue_no,
+    ov.vn,
+    ov.hn,
+    CONCAT(pt.pname, pt.fname, ' ', pt.lname) AS queue_name,
+    p.name AS insurance,
+    k.department,
+    CASE
+        WHEN EXISTS (SELECT 1 FROM oapp oa WHERE oa.visit_vn = ov.vn)
+        THEN 'นัดมา' ELSE 'walkin'
+    END AS visit_type
+FROM opd_qs_slot os
+LEFT JOIN ovst ov ON ov.vn = os.vn
+LEFT JOIN patient pt ON pt.hn = ov.hn
+LEFT JOIN pttype p ON p.pttype = ov.pttype
+LEFT JOIN kskdepartment k ON k.depcode = ov.cur_dep
+LEFT JOIN opd_qs_room oq ON oq.opd_qs_room_id = os.opd_qs_room_id
+WHERE os.schedule_date = ? AND ov.vn IS NOT NULL
+ORDER BY k.department, os.queue_slot_number`
+
+const SLOT_CUR_SQL_PG = `
+SELECT ov.vstdate, ov.vsttime,
+    oq.opd_qs_room_name AS queue_type,
+    os.queue_slot_number AS queue_slot,
+    ov.oqueue AS queue_no,
+    ov.vn,
+    ov.hn,
+    CONCAT(pt.pname, pt.fname, ' ', pt.lname) AS queue_name,
+    p.name AS insurance,
+    k.department,
+    CASE
+        WHEN EXISTS (SELECT 1 FROM oapp oa WHERE oa.visit_vn = ov.vn)
+        THEN 'นัดมา' ELSE 'walkin'
+    END AS visit_type
+FROM opd_qs_slot os
+LEFT JOIN ovst ov ON ov.vn = os.vn
+LEFT JOIN patient pt ON pt.hn = ov.hn
+LEFT JOIN pttype p ON p.pttype = ov.pttype
+LEFT JOIN kskdepartment k ON k.depcode = ov.cur_dep
+LEFT JOIN opd_qs_room oq ON oq.opd_qs_room_id = os.opd_qs_room_id
+WHERE os.schedule_date = $1 AND ov.vn IS NOT NULL
+ORDER BY k.department, os.queue_slot_number`
+
 // ─── OPD Visit SQL (OPD mode — ovst) ─────────────────────────────────────────
 
 const OPD_SQL_MYSQL = `
@@ -278,10 +434,51 @@ LEFT JOIN kskdepartment k ON k.depcode = ov.main_dep
 WHERE ov.vstdate = $1
 ORDER BY k.department, ov.oqueue`
 
+// ─── Current Department SQL (cur_dep mode — ห้องตรวจปัจจุบัน) ────────────────
+
+const CUR_DEP_SQL_MYSQL = `
+SELECT ov.vstdate, ov.vsttime,
+    ov.oqueue AS queue_no,
+    ov.vn,
+    ov.hn,
+    CONCAT(pt.pname, pt.fname, ' ', pt.lname) AS queue_name,
+    p.name AS insurance,
+    k.department,
+    CASE
+        WHEN EXISTS (SELECT 1 FROM oapp oa WHERE oa.visit_vn = ov.vn)
+        THEN 'นัดมา' ELSE 'walkin'
+    END AS visit_type
+FROM ovst ov
+LEFT JOIN patient pt ON pt.hn = ov.hn
+LEFT JOIN pttype p ON p.pttype = ov.pttype
+LEFT JOIN kskdepartment k ON k.depcode = ov.cur_dep
+WHERE ov.vstdate = ?
+ORDER BY k.department, ov.oqueue`
+
+const CUR_DEP_SQL_PG = `
+SELECT ov.vstdate, ov.vsttime,
+    ov.oqueue AS queue_no,
+    ov.vn,
+    ov.hn,
+    CONCAT(pt.pname, pt.fname, ' ', pt.lname) AS queue_name,
+    p.name AS insurance,
+    k.department,
+    CASE
+        WHEN EXISTS (SELECT 1 FROM oapp oa WHERE oa.visit_vn = ov.vn)
+        THEN 'นัดมา' ELSE 'walkin'
+    END AS visit_type
+FROM ovst ov
+LEFT JOIN patient pt ON pt.hn = ov.hn
+LEFT JOIN pttype p ON p.pttype = ov.pttype
+LEFT JOIN kskdepartment k ON k.depcode = ov.cur_dep
+WHERE ov.vstdate = $1
+ORDER BY k.department, ov.oqueue`
+
 function getSQLByMode(mode) {
-  return mode === 'opd'
-    ? { mysql: OPD_SQL_MYSQL, pg: OPD_SQL_PG }
-    : { mysql: HOSXP_SQL_MYSQL, pg: HOSXP_SQL_PG }
+  if (mode === 'opd')      return { mysql: OPD_SQL_MYSQL,      pg: OPD_SQL_PG }
+  if (mode === 'cur_dep')  return { mysql: CUR_DEP_SQL_MYSQL,  pg: CUR_DEP_SQL_PG }
+  if (mode === 'slot_cur') return { mysql: SLOT_CUR_SQL_MYSQL, pg: SLOT_CUR_SQL_PG }
+  return { mysql: HOSXP_SQL_MYSQL, pg: HOSXP_SQL_PG }
 }
 
 function getTodayDate() {
@@ -301,19 +498,30 @@ app.get('/api/queue/list', async (req, res) => {
   const settings = loadSettings()
   if (!settings) return res.json({ success: false, data: [] })
   try {
-    const mode = req.query.mode === 'opd' ? 'opd' : 'slot'
+    const mode = ['opd', 'cur_dep', 'slot_cur'].includes(req.query.mode) ? req.query.mode : 'slot'
     const { mysql, pg } = getSQLByMode(mode)
     const today = getTodayDate()
     const rows = await queryDB(settings, mysql, pg, [today])
     const calls = getTodayCalls()
-    const data = rows.map(r => ({
-      ...r,
-      vstdate: toLocalDateStr(r.vstdate),
-      queue_slot: r.queue_slot != null ? String(r.queue_slot) : null,
-      queue_no: r.queue_no != null ? String(r.queue_no) : '',
-      status: calls[r.vn]?.status || 'waiting',
-      service_point: calls[r.vn]?.servicePoint || ''
-    }))
+    const data = rows.map(r => {
+      const call = calls[r.vn]
+      // cur_dep / slot_cur modes: only show status from calls made via the same mode
+      const isCurMode = mode === 'cur_dep' || mode === 'slot_cur'
+      const effectiveStatus = (isCurMode && call && call.mode !== mode)
+        ? 'waiting'
+        : (call?.status || 'waiting')
+      const effectiveSP = (isCurMode && call && call.mode !== mode)
+        ? ''
+        : (call?.servicePoint || '')
+      return {
+        ...r,
+        vstdate: toLocalDateStr(r.vstdate),
+        queue_slot: r.queue_slot != null ? String(r.queue_slot) : null,
+        queue_no: r.queue_no != null ? String(r.queue_no) : '',
+        status: effectiveStatus,
+        service_point: effectiveSP
+      }
+    })
     res.json({ success: true, data })
   } catch (e) {
     res.json({ success: false, data: [], message: e.message })
@@ -321,11 +529,11 @@ app.get('/api/queue/list', async (req, res) => {
 })
 
 app.post('/api/queue/call', async (req, res) => {
-  const { identifier, servicePoint, mode } = req.body
+  const { identifier, servicePoint, mode, displayConfigId } = req.body
   const settings = loadSettings()
   if (!settings) return res.json({ success: false, message: 'ไม่มีการตั้งค่า' })
   try {
-    const qMode = mode === 'opd' ? 'opd' : 'slot'
+    const qMode = ['opd', 'cur_dep', 'slot_cur'].includes(mode) ? mode : 'slot'
     const { mysql, pg } = getSQLByMode(qMode)
     const today = getTodayDate()
     const rows = await queryDB(settings, mysql, pg, [today])
@@ -344,22 +552,49 @@ app.post('/api/queue/call', async (req, res) => {
       status: 'calling',
       servicePoint: String(servicePoint),
       calledAt: new Date().toLocaleTimeString('th-TH'),
-      queueNo: displayNo
+      queueNo: displayNo,
+      mode: qMode
     }
     saveTodayCalls(calls)
 
-    broadcast({ type: 'queue:called', data: { queueNo: displayNo, servicePoint: String(servicePoint) } })
+    // Respond and broadcast queue number immediately — don't wait for TTS
+    broadcast({ type: 'queue:called', data: { queueNo: displayNo, servicePoint: String(servicePoint), audioUrl: null, displayConfigId: displayConfigId || null } })
     res.json({ success: true, queueNo: displayNo, queueSlot: found.queue_slot })
+
+    // Generate TTS async in background, broadcast audio when ready
+    try {
+      const qdFile = displayConfigId ? qdConfigFile(displayConfigId) : QD_DEFAULT_FILE
+      const qdCfg = fs.existsSync(qdFile)
+        ? JSON.parse(fs.readFileSync(qdFile, 'utf-8'))
+        : (fs.existsSync(QD_DEFAULT_FILE) ? JSON.parse(fs.readFileSync(QD_DEFAULT_FILE, 'utf-8')) : null)
+      if (qdCfg && qdCfg.ttsEnabled && qdCfg.ttsSource === 'server') {
+        const text = [qdCfg.ttsPrefix1, displayNo, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix]
+          .filter(Boolean).join(' ')
+        const voiceName = qdCfg.ttsServerVoiceName || qdCfg.ttsVoiceName || ''
+        generateServerTTS(text, voiceName, qdCfg.ttsRate ?? 1).then(audioUrl => {
+          broadcast({ type: 'queue:audio', data: { audioUrl, displayConfigId: displayConfigId || null } })
+        }).catch(err => console.error('[TTS async]', err.message))
+      }
+    } catch (ttsErr) {
+      console.error('[TTS config]', ttsErr.message)
+    }
   } catch (e) {
     res.json({ success: false, message: e.message })
   }
 })
 
-// Returns queue entries with status='skip' (เรียกแล้วไม่มา panel)
+// Returns queue entries filtered by status and optionally by mode
 app.get('/api/queue/calls-today', (req, res) => {
   const calls = getTodayCalls()
+  const modeFilter = req.query.mode || null
   const result = Object.entries(calls)
-    .filter(([, v]) => v.status === 'skip')
+    .filter(([, v]) => {
+      if (v.status !== 'skip') return false
+      if (modeFilter === 'cur_dep') return v.mode === 'cur_dep'
+      if (modeFilter === 'slot_cur') return v.mode === 'slot_cur'
+      if (modeFilter) return !v.mode || (v.mode !== 'cur_dep' && v.mode !== 'slot_cur')
+      return true
+    })
     .map(([vn, v]) => ({ vn, ...v }))
   res.json(result)
 })
@@ -403,10 +638,42 @@ app.post('/api/display/qd-default', (req, res) => {
   }
 })
 
+// ─── Per-display QD config (isolated per display ID) ─────────────────────────
+
+function qdConfigFile(id) {
+  return path.join(DATA_DIR, `qd-config-${id}.json`)
+}
+
+app.get('/api/display/qd-config/:id', (req, res) => {
+  try {
+    const f = qdConfigFile(req.params.id)
+    if (fs.existsSync(f)) return res.json(JSON.parse(fs.readFileSync(f, 'utf-8')))
+    // Fall back to global default if no per-display config yet
+    if (fs.existsSync(QD_DEFAULT_FILE))
+      return res.json(JSON.parse(fs.readFileSync(QD_DEFAULT_FILE, 'utf-8')))
+  } catch {}
+  res.json(null)
+})
+
+app.post('/api/display/qd-config/:id', (req, res) => {
+  try {
+    fs.writeFileSync(qdConfigFile(req.params.id), JSON.stringify(req.body, null, 2), 'utf-8')
+    res.json({ success: true })
+  } catch (e) {
+    res.json({ success: false, message: e.message })
+  }
+})
+
 // ─── API: Display configs CRUD ────────────────────────────────────────────────
 
 app.get('/api/display/configs', (req, res) => {
   res.json(loadDisplayConfigs())
+})
+
+app.get('/api/display/configs/:id', (req, res) => {
+  const cfg = loadDisplayConfigs().find(c => c.id === req.params.id)
+  if (!cfg) return res.status(404).json({ error: 'Not found' })
+  res.json(cfg)
 })
 
 app.post('/api/display/configs', (req, res) => {
@@ -480,6 +747,20 @@ app.delete('/api/service-points/:id', (req, res) => {
   const data = loadServicePoints().filter(sp => sp.id !== req.params.id)
   saveServicePoints(data)
   res.json({ success: true })
+})
+
+// ─── Server IP ───────────────────────────────────────────────────────────────
+app.get('/api/server-ip', (req, res) => {
+  const os = require('os')
+  const nets = os.networkInterfaces()
+  let ip = null
+  for (const iface of Object.values(nets)) {
+    for (const addr of iface) {
+      if (addr.family === 'IPv4' && !addr.internal) { ip = addr.address; break }
+    }
+    if (ip) break
+  }
+  res.json({ ip: ip || 'localhost', port: PORT })
 })
 
 // Fallback: serve index.html for SPA routing (Express 4 & 5 compatible)

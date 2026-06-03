@@ -2,13 +2,13 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   getQueueList, callQueue, onQueueCalled, updateQueueStatus,
-  getServicePoints
+  getServicePoints, getDisplayConfigs
 } from '../lib/api'
 import './QueueCall.css'
 
 type QueueStatus = 'waiting' | 'calling' | 'done' | 'skip'
 type QueueRow = QueueItem & { status: QueueStatus }
-type QueueMode = 'slot' | 'opd'
+type QueueMode = 'slot' | 'opd' | 'cur_dep' | 'slot_cur'
 
 function getPrefsKey() {
   const officer = sessionStorage.getItem('officer') || 'default'
@@ -18,7 +18,7 @@ function getPrefsKey() {
 function loadSavedPrefs() {
   try {
     return JSON.parse(localStorage.getItem(getPrefsKey()) || 'null') as
-      { servicePointId?: string; filterDepts?: string[] } | null
+      { servicePointId?: string; filterDepts?: string[]; selectedDisplayId?: string } | null
   } catch { return null }
 }
 
@@ -28,9 +28,23 @@ export default function QueueCallPage() {
   const [loading, setLoading] = useState(false)
   const [callingId, setCallingId] = useState<string | null>(null)
 
-  // Service points
+  // Display configs
+  const [displayConfigs, setDisplayConfigs] = useState<DisplayConfigItem[]>([])
+  const [selectedDisplayId, setSelectedDisplayId] = useState<string>(() => loadSavedPrefs()?.selectedDisplayId || '')
+
+  // Service points (global fallback)
   const [servicePoints, setServicePoints] = useState<ServicePoint[]>([])
   const [servicePointId, setServicePointId] = useState<string>(() => loadSavedPrefs()?.servicePointId || '')
+
+  // Derived: channels from selected display (if any)
+  const selectedDisplay = displayConfigs.find(d => d.id === selectedDisplayId)
+  const displayChannels = selectedDisplay?.channels || []
+  const useDisplayChannels = selectedDisplayId !== '' && displayChannels.length > 0
+
+  // Active channel name
+  const activeChannelName = useDisplayChannels
+    ? (servicePointId || (displayChannels[0] ?? ''))
+    : (servicePoints.find(sp => sp.id === servicePointId)?.name || '')
 
   const [mode, setMode] = useState<QueueMode>(() => (localStorage.getItem('qc_mode') as QueueMode) || 'slot')
 
@@ -55,7 +69,7 @@ export default function QueueCallPage() {
   const isModeFirstMount = useRef(true)
 
   const currentSp = servicePoints.find(sp => sp.id === servicePointId)
-  const currentSpName = currentSp?.name || ''
+  const currentSpName = useDisplayChannels ? activeChannelName : (currentSp?.name || '')
 
   useEffect(() => {
     const t = setInterval(() => setClock(new Date()), 1000)
@@ -76,12 +90,13 @@ export default function QueueCallPage() {
   }, [])
 
   const savePrefs = () => {
-    localStorage.setItem(getPrefsKey(), JSON.stringify({ servicePointId, filterDepts }))
+    localStorage.setItem(getPrefsKey(), JSON.stringify({ servicePointId, filterDepts, selectedDisplayId }))
     setSavedPrefsMsg(true)
     setTimeout(() => setSavedPrefsMsg(false), 2500)
   }
 
   useEffect(() => { loadSP() }, [loadSP])
+  useEffect(() => { getDisplayConfigs().then(setDisplayConfigs) }, [])
 
   const loadQueues = useCallback(async () => {
     setLoading(true)
@@ -173,7 +188,7 @@ export default function QueueCallPage() {
   const doCall = async (queue: QueueRow) => {
     setCallingId(queue.vn)
     try {
-      const res = await callQueue(queue.vn, currentSpName, mode)
+      const res = await callQueue(queue.vn, currentSpName, mode, selectedDisplayId || undefined)
       if (res.success) {
         setCurrentCalled({ queueNo: res.queueNo || queue.queue_no, servicePoint: currentSpName })
         loadQueues()
@@ -225,7 +240,7 @@ export default function QueueCallPage() {
     if (!val) return
     setCallingId('__quick__')
     try {
-      const res = await callQueue(val, currentSpName, mode)
+      const res = await callQueue(val, currentSpName, mode, selectedDisplayId || undefined)
       if (res.success) {
         setCurrentCalled({ queueNo: res.queueNo || val, servicePoint: currentSpName })
         setQuickCall('')
@@ -258,11 +273,17 @@ export default function QueueCallPage() {
 
   const filteredQueues = activeQueues.filter(q => {
     const matchDept = filterDepts.length === 0 || filterDepts.includes(q.department || '')
-    const matchStatus = filterStatus === 'all' || q.status === filterStatus
+    const matchStatus = filterStatus === 'all'
+      ? q.status !== 'skip' && q.status !== 'cleared'
+      : q.status === filterStatus
     return matchDept && matchStatus
   })
 
-  const countByStatus = (s: string) => queues.filter(q => q.status === s).length
+  // Count by status — respect dept filter so summary reflects selected room/display
+  const deptFilteredQueues = filterDepts.length === 0
+    ? queues
+    : queues.filter(q => filterDepts.includes(q.department || ''))
+  const countByStatus = (s: string) => deptFilteredQueues.filter(q => q.status === s).length
 
   const statusLabel: Record<string, string> = {
     waiting: 'รอเรียก', calling: 'กำลังเรียก', done: 'เสร็จแล้ว', skip: 'ไม่มา'
@@ -284,9 +305,40 @@ export default function QueueCallPage() {
       {/* ─── Top Bar ─── */}
       <header className="qc-topbar">
         <div className="qc-topbar-left">
+          {/* ── จุดแสดงคิว selector ── */}
+          <div className="qc-topbar-sp">
+            <span className="qc-topbar-sp-label">จุดแสดงคิว</span>
+            <select
+              className="qc-topbar-sp-select"
+              value={selectedDisplayId}
+              onChange={e => {
+                setSelectedDisplayId(e.target.value)
+                setServicePointId('') // reset channel when display changes
+              }}
+            >
+              <option value="">— ทั่วไป (ไม่ระบุจอ) —</option>
+              {displayConfigs.map(d => (
+                <option key={d.id} value={d.id}>
+                  📺 {d.name}{d.channels?.length ? ` (${d.channels.length} ช่อง)` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* ── ช่องบริการ ── */}
           <div className="qc-topbar-sp">
             <span className="qc-topbar-sp-label">ช่องบริการ</span>
-            {servicePoints.length > 0 ? (
+            {useDisplayChannels ? (
+              <select
+                className="qc-topbar-sp-select"
+                value={servicePointId}
+                onChange={e => setServicePointId(e.target.value)}
+              >
+                {displayChannels.map(ch => (
+                  <option key={ch} value={ch}>{ch}</option>
+                ))}
+              </select>
+            ) : servicePoints.length > 0 ? (
               <select
                 className="qc-topbar-sp-select"
                 value={servicePointId}
@@ -314,28 +366,35 @@ export default function QueueCallPage() {
 
         <div className="qc-topbar-center">
           <div className="qc-mode-switch">
-            <button
-              className={`qc-mode-btn ${mode === 'slot' ? 'active' : ''}`}
-              onClick={() => { setMode('slot'); localStorage.setItem('qc_mode', 'slot') }}
-              title="คิวจาก HOSxP Queue Slot"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-                <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="2"/>
-                <path d="M8 9h8M8 12h5M8 15h3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-              </svg>
-              HOSxP Queue
-            </button>
-            <button
-              className={`qc-mode-btn ${mode === 'opd' ? 'active' : ''}`}
-              onClick={() => { setMode('opd'); localStorage.setItem('qc_mode', 'opd') }}
-              title="คิวจากการเปิด Visit (ovst.oqueue)"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2"/>
-                <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-              OPD Visit
-            </button>
+            {/* ── กลุ่ม 1: Queue Prefix (opd_qs_slot) ── */}
+            <div className="qc-mode-group group-prefix">
+              <button
+                className={`qc-mode-btn prefix${mode === 'slot' ? ' active' : ''}`}
+                onClick={() => { setMode('slot'); localStorage.setItem('qc_mode', 'slot') }}
+                title="HOSxP Queue Slot (opd_qs_slot / main_dep)"
+              >Queue_Prefix</button>
+              <button
+                className={`qc-mode-btn prefix${mode === 'slot_cur' ? ' active' : ''}`}
+                onClick={() => { setMode('slot_cur'); localStorage.setItem('qc_mode', 'slot_cur') }}
+                title="HOSxP Queue Slot ตามห้องตรวจปัจจุบัน (opd_qs_slot / cur_dep)"
+              >Queue_Prefix_Room</button>
+            </div>
+
+            <div className="qc-mode-sep" />
+
+            {/* ── กลุ่ม 2: Queue OPD (ovst) ── */}
+            <div className="qc-mode-group group-opd">
+              <button
+                className={`qc-mode-btn opd${mode === 'opd' ? ' active' : ''}`}
+                onClick={() => { setMode('opd'); localStorage.setItem('qc_mode', 'opd') }}
+                title="OPD Visit (ovst / main_dep)"
+              >Queue_OPD</button>
+              <button
+                className={`qc-mode-btn opd${mode === 'cur_dep' ? ' active' : ''}`}
+                onClick={() => { setMode('cur_dep'); localStorage.setItem('qc_mode', 'cur_dep') }}
+                title="OPD Visit ตามห้องตรวจปัจจุบัน (ovst / cur_dep)"
+              >Queue_OPD_Room</button>
+            </div>
           </div>
         </div>
 
@@ -566,7 +625,7 @@ export default function QueueCallPage() {
             <div className="qc-filter-tabs">
               {(['all', 'waiting', 'calling'] as const).map(s => (
                 <button key={s} className={`qc-tab ${filterStatus === s ? 'active' : ''}`} onClick={() => setFilterStatus(s)}>
-                  {s === 'all' ? `ทั้งหมด (${activeQueues.length})` : `${statusLabel[s]} (${countByStatus(s)})`}
+                  {s === 'all' ? `ทั้งหมด (${deptFilteredQueues.length})` : `${statusLabel[s]} (${countByStatus(s)})`}
                 </button>
               ))}
               <button className="qc-history-btn" onClick={() => navigate('/queue-history')}>
@@ -594,8 +653,8 @@ export default function QueueCallPage() {
               <table className="qc-table">
                 <thead><tr>
                   <th>วันที่</th>
-                  {mode === 'slot' && <th>Queue Dep</th>}
-                  <th>{mode === 'slot' ? 'oqueue' : 'คิว'}</th>
+                  {(mode === 'slot' || mode === 'slot_cur') && <th>Queue Dep</th>}
+                  <th>{(mode === 'slot' || mode === 'slot_cur') ? 'oqueue' : 'คิว'}</th>
                   <th>HN</th>
                   <th>ชื่อ</th><th>สิทธิการรักษา</th><th>แผนก</th>
                   <th>ประเภท</th><th>สถานะ</th>
@@ -627,8 +686,8 @@ export default function QueueCallPage() {
                         <div>{q.vstdate ? String(q.vstdate).substring(0, 10) : '—'}</div>
                         {q.vsttime && <div className="qc-td-time">{String(q.vsttime).substring(0, 5)}</div>}
                       </td>
-                      {mode === 'slot' && <td className="qc-td-center qc-td-slot">{q.queue_slot ?? '—'}</td>}
-                      <td className="qc-td-center qc-td-qno">{q.queue_no || '—'}</td>
+                      {(mode === 'slot' || mode === 'slot_cur') && <td className="qc-td-center"><span className="qc-slot-pill">{q.queue_slot ?? '—'}</span></td>}
+                      <td className="qc-td-center"><span className="qc-qno-pill">{q.queue_no || '—'}</span></td>
                       <td className="qc-td-hn">{q.hn || '—'}</td>
                       <td className="qc-td-name">{q.queue_name || '—'}</td>
                       <td className="qc-td-ins">{q.insurance || '—'}</td>
@@ -653,7 +712,6 @@ export default function QueueCallPage() {
                           <div className="qc-action-group">
                             <button className="btn btn-accent qc-recall-btn" onClick={() => handleCall(q)} disabled={!!callingId}>🔁</button>
                             <button className="btn btn-success qc-done-btn" onClick={() => handleStatusChange(q, 'done')}>✓</button>
-                            <button className="btn btn-ghost qc-skip-btn" onClick={() => handleStatusChange(q, 'skip')}>ไม่มา</button>
                           </div>
                         )}
                       </td>

@@ -6,3 +6,5 @@ dist-electron/
 .env
 .env.*
 data/db-settings.json
+data/tts-cache/
+data/qd-config-*.json

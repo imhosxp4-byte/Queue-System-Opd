@@ -18,9 +18,10 @@ async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
 
 // ─── WebSocket (Browser mode) ─────────────────────────────────────────────────
 let _ws: WebSocket | null = null
-const _wsListeners: Set<(data: { queueNo: string; servicePoint: string }) => void> = new Set()
+const _wsListeners: Set<(data: { queueNo: string; servicePoint: string; audioUrl?: string | null; displayConfigId?: string | null }) => void> = new Set()
 const _configListeners: Set<(config: unknown) => void> = new Set()
 const _statusListeners: Set<(data: { vn: string; status: string; queueNo?: string; servicePoint?: string }) => void> = new Set()
+const _audioListeners: Set<(data: { audioUrl: string; displayConfigId?: string | null }) => void> = new Set()
 
 function getWS(): WebSocket {
   if (_ws && _ws.readyState === WebSocket.OPEN) return _ws
@@ -31,6 +32,8 @@ function getWS(): WebSocket {
       const msg = JSON.parse(e.data)
       if (msg.type === 'queue:called') {
         _wsListeners.forEach(cb => cb(msg.data))
+      } else if (msg.type === 'queue:audio') {
+        _audioListeners.forEach(cb => cb(msg.data))
       } else if (msg.type === 'display:config') {
         _configListeners.forEach(cb => cb(msg.data))
       } else if (msg.type === 'queue:status') {
@@ -73,17 +76,17 @@ export async function login(
 // ─── Queue ────────────────────────────────────────────────────────────────────
 
 export async function getQueueList(
-  mode: 'slot' | 'opd' = 'slot'
+  mode: 'slot' | 'opd' | 'cur_dep' | 'slot_cur' = 'slot'
 ): Promise<{ success: boolean; data: QueueItem[]; message?: string }> {
   if (isElectron()) return window.electronAPI.getQueueList()
   return fetchJSON(`/queue/list?mode=${mode}`)
 }
 
 export async function callQueue(
-  identifier: string, servicePoint: string, mode: 'slot' | 'opd' = 'slot'
+  identifier: string, servicePoint: string, mode: 'slot' | 'opd' | 'cur_dep' | 'slot_cur' = 'slot', displayConfigId?: string
 ): Promise<{ success: boolean; message?: string; queueNo?: string; queueSlot?: number }> {
   if (isElectron()) return window.electronAPI.callQueue(identifier, servicePoint)
-  return fetchJSON('/queue/call', { method: 'POST', body: JSON.stringify({ identifier, servicePoint, mode }) })
+  return fetchJSON('/queue/call', { method: 'POST', body: JSON.stringify({ identifier, servicePoint, mode, displayConfigId }) })
 }
 
 export async function updateQueueStatus(
@@ -101,10 +104,11 @@ export interface CallEntry {
   queueNo: string
 }
 
-export async function getCallsToday(): Promise<CallEntry[]> {
+export async function getCallsToday(mode?: string): Promise<CallEntry[]> {
   if (isElectron()) return []
   try {
-    return await fetchJSON<CallEntry[]>('/queue/calls-today')
+    const qs = mode ? `?mode=${mode}` : ''
+    return await fetchJSON<CallEntry[]>(`/queue/calls-today${qs}`)
   } catch {
     return []
   }
@@ -122,8 +126,24 @@ export async function saveQDDefaultConfig(cfg: unknown): Promise<{ success: bool
   return fetchJSON('/display/qd-default', { method: 'POST', body: JSON.stringify(cfg) })
 }
 
+export async function getDisplayQDConfig(displayId: string): Promise<Record<string, unknown> | null> {
+  try {
+    return await fetchJSON<Record<string, unknown> | null>(`/display/qd-config/${displayId}`)
+  } catch {
+    return null
+  }
+}
+
+export async function saveDisplayQDConfig(displayId: string, cfg: unknown): Promise<{ success: boolean }> {
+  return fetchJSON(`/display/qd-config/${displayId}`, { method: 'POST', body: JSON.stringify(cfg) })
+}
+
+export async function getTTSVoices(): Promise<string[]> {
+  try { return await fetchJSON<string[]>('/tts/voices') } catch { return [] }
+}
+
 export function onQueueCalled(
-  cb: (data: { queueNo: string; servicePoint: string }) => void
+  cb: (data: { queueNo: string; servicePoint: string; audioUrl?: string | null; displayConfigId?: string | null }) => void
 ): () => void {
   if (isElectron()) return window.electronAPI.onQueueCalled(cb)
   if (typeof window !== 'undefined') getWS()
@@ -157,8 +177,13 @@ export async function deleteServicePoint(id: string): Promise<{ success: boolean
 
 export async function openDisplay(config: DisplayConfig): Promise<void> {
   if (isElectron()) return window.electronAPI.openDisplay(config)
-  // Browser: open display in new tab (settings loaded from localStorage)
-  window.open('/#/display', '_blank', 'noopener')
+  const id = (config as DisplayConfigItem).id
+  const url = id ? `/#/display?id=${id}` : '/#/display'
+  window.open(url, '_blank', 'noopener')
+}
+
+export async function getDisplayConfigById(id: string): Promise<DisplayConfigItem | null> {
+  try { return await fetchJSON<DisplayConfigItem>(`/display/configs/${id}`) } catch { return null }
 }
 
 export async function updateDisplayConfig(config: DisplayConfig): Promise<void> {
@@ -171,6 +196,14 @@ export function onDisplayConfig(cb: (config: unknown) => void): () => void {
   if (typeof window !== 'undefined') getWS()
   _configListeners.add(cb)
   return () => _configListeners.delete(cb)
+}
+
+export function onQueueAudio(
+  cb: (data: { audioUrl: string; displayConfigId?: string | null }) => void
+): () => void {
+  if (typeof window !== 'undefined') getWS()
+  _audioListeners.add(cb)
+  return () => _audioListeners.delete(cb)
 }
 
 export function onQueueStatusChanged(

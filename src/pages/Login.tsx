@@ -27,7 +27,7 @@ export default function LoginPage() {
     setLoading(false)
     if (res.success) {
       sessionStorage.setItem('officer', res.username || username)
-      navigate('/main')
+      navigate('/queue-call')
     } else {
       setError(res.message || 'เข้าสู่ระบบไม่สำเร็จ')
     }

@@ -19,7 +19,8 @@ const DEFAULT_FORM: Omit<DisplayConfigItem, 'id'> = {
   queueBgColor: 'rgba(0,188,212,0.15)',
   showHistory: true,
   animationType: 'scale',
-  soundEnabled: false
+  soundEnabled: false,
+  channels: []
 }
 
 export default function DisplayConfigsPage() {
@@ -32,6 +33,29 @@ export default function DisplayConfigsPage() {
   const [fonts, setFonts] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  const copyDisplayLink = async (cfg: DisplayConfigItem) => {
+    try {
+      const r = await fetch('/api/server-ip')
+      const { ip, port } = await r.json()
+      const url = `http://${ip}:${port}/#/display?id=${cfg.id}`
+      await navigator.clipboard.writeText(url)
+      setCopiedId(cfg.id)
+      setTimeout(() => setCopiedId(null), 2000)
+    } catch {}
+  }
+  const [newChannel, setNewChannel] = useState('')
+
+  const addChannel = () => {
+    const ch = newChannel.trim()
+    if (!ch || (form.channels || []).includes(ch)) return
+    setF('channels', [...(form.channels || []), ch])
+    setNewChannel('')
+  }
+
+  const removeChannel = (ch: string) =>
+    setF('channels', (form.channels || []).filter(c => c !== ch))
 
   useEffect(() => { load() }, [])
 
@@ -136,6 +160,11 @@ export default function DisplayConfigsPage() {
                   <div className="dcfg-card-info">
                     <span className="dcfg-card-name">{cfg.name}</span>
                     <span className="dcfg-card-meta">{cfg.font} · {cfg.fontSize}px · {cfg.animationType || 'scale'}</span>
+                    {(cfg.channels?.length ?? 0) > 0 && (
+                      <span className="dcfg-card-channels">
+                        📺 {cfg.channels!.length} ช่อง: {cfg.channels!.join(', ')}
+                      </span>
+                    )}
                     <div className="dcfg-swatches">
                       <span className="dcfg-swatch" style={{ background: cfg.bgColor }} title="พื้นหลัง" />
                       <span className="dcfg-swatch" style={{ background: cfg.textColor }} title="ข้อความ" />
@@ -143,6 +172,12 @@ export default function DisplayConfigsPage() {
                     </div>
                   </div>
                   <div className="dcfg-card-actions">
+                    <button
+                      className={`btn dcfg-btn-copy${copiedId === cfg.id ? ' copied' : ''}`}
+                      onClick={() => copyDisplayLink(cfg)}
+                      title="คัดลอกลิ้งหน้าจอนี้">
+                      {copiedId === cfg.id ? '✓ คัดลอกแล้ว' : '🔗 ลิ้งค์'}
+                    </button>
                     <button className="btn btn-primary dcfg-btn-open" onClick={() => openDisplay(cfg)}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                         <rect x="2" y="4" width="20" height="14" rx="2" stroke="currentColor" strokeWidth="2" />
@@ -187,8 +222,8 @@ export default function DisplayConfigsPage() {
       </div>
 
       {showModal && (
-        <div className="dcfg-overlay" onClick={() => setShowModal(false)}>
-          <div className="dcfg-modal card animate-scale" onClick={e => e.stopPropagation()}>
+        <div className="dcfg-overlay">
+          <div className="dcfg-modal card animate-scale">
             <div className="dcfg-modal-header">
               <h3>{editingId ? 'แก้ไขหน้าจอ' : 'เพิ่มหน้าจอใหม่'}</h3>
               <button className="btn btn-ghost dcfg-modal-close" onClick={() => setShowModal(false)}>✕</button>
@@ -286,6 +321,31 @@ export default function DisplayConfigsPage() {
                     <span className="toggle-track" />
                   </label>
                 </label>
+              </div>
+
+              {/* ── ช่องบริการ ── */}
+              <div className="dcfg-field">
+                <label>ช่องบริการของหน้าจอนี้</label>
+                <div className="dcfg-channel-add">
+                  <input className="input" placeholder="ชื่อช่อง เช่น ห้อง 1 หรือ ช่องอายุรกรรม 1"
+                    value={newChannel}
+                    onChange={e => setNewChannel(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addChannel()} />
+                  <button className="btn btn-accent" onClick={addChannel} type="button">+ เพิ่ม</button>
+                </div>
+                {(form.channels || []).length > 0 ? (
+                  <div className="dcfg-channel-list">
+                    {(form.channels || []).map((ch, idx) => (
+                      <span key={ch} className="dcfg-channel-tag">
+                        <span className="dcfg-channel-num">{idx + 1}</span>
+                        {ch}
+                        <button onClick={() => removeChannel(ch)} title="ลบ">✕</button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="dcfg-channel-empty">ยังไม่มีช่อง — หน้าจอนี้จะแสดงช่องทั้งหมดในระบบ</p>
+                )}
               </div>
 
               <div className="dcfg-preview-live" style={{ background: form.bgColor }}>

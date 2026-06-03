@@ -1,437 +1,409 @@
 {
-  "date": "2026-06-02",
+  "date": "2026-06-03",
   "calls": {
-    "690602000115": {
+    "690603075858": {
       "status": "done",
       "servicePoint": "1",
-      "calledAt": "14:25:37",
-      "queueNo": "GP-001"
+      "calledAt": "15:04:30",
+      "queueNo": "GP001",
+      "mode": "slot"
     },
-    "690602000126": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "14:14:51",
-      "queueNo": "GP-002"
-    },
-    "690602000129": {
-      "status": "done",
-      "servicePoint": "3",
-      "calledAt": "14:15:09",
-      "queueNo": "GP-003"
-    },
-    "690602000131": {
-      "status": "done",
+    "690603030309": {
+      "status": "skip",
       "servicePoint": "1",
-      "calledAt": "14:21:09",
-      "queueNo": "307"
+      "calledAt": "14:27:59",
+      "queueNo": "ER004",
+      "mode": "slot_cur"
     },
-    "690602000143": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "14:21:28",
-      "queueNo": "GP-005"
-    },
-    "690602000117": {
+    "690603000001": {
       "status": "calling",
       "servicePoint": "1",
-      "calledAt": "15:54:06",
-      "queueNo": "293"
+      "calledAt": "15:04:38",
+      "queueNo": "D001",
+      "mode": "slot"
     },
-    "690602000140": {
+    "690603000007": {
       "status": "waiting",
-      "servicePoint": "ช่อง 3",
-      "calledAt": "11:10:21",
-      "queueNo": "AE002"
-    },
-    "690602000154": {
-      "status": "done",
       "servicePoint": "1",
-      "calledAt": "14:29:45",
-      "queueNo": "GP-007"
+      "calledAt": "11:05:59",
+      "queueNo": "D002"
     },
-    "690602000148": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "14:21:37",
-      "queueNo": "GP-006"
-    },
-    "690602000157": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "14:29:56",
-      "queueNo": "GP-008"
-    },
-    "690602085025": {
-      "status": "done",
-      "servicePoint": "ช่อง 2",
-      "calledAt": "13:20:51",
-      "queueNo": "PT-002"
-    },
-    "690602000128": {
-      "status": "done",
-      "servicePoint": "ช่อง 2",
-      "calledAt": "13:20:38",
-      "queueNo": "O002"
-    },
-    "690602083439": {
-      "status": "done",
-      "servicePoint": "ช่อง 2",
-      "calledAt": "13:20:39",
-      "queueNo": "PT-001"
-    },
-    "690602085135": {
-      "status": "done",
-      "servicePoint": "ช่อง 2",
-      "calledAt": "13:32:25",
-      "queueNo": "PT-003"
-    },
-    "690602085435": {
-      "status": "done",
-      "servicePoint": "ช่อง 2",
-      "calledAt": "13:54:28",
-      "queueNo": "PT-004"
-    },
-    "690602085643": {
-      "status": "done",
-      "servicePoint": "โต๊ะ 2",
-      "calledAt": "13:55:04",
-      "queueNo": "PT-005"
-    },
-    "690602090419": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "13:55:49",
-      "queueNo": "PT-006"
-    },
-    "690602085503": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "13:58:06",
-      "queueNo": "PT-007"
-    },
-    "690602092637": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "13:58:19",
-      "queueNo": "PT-008"
-    },
-    "690602094121": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "13:58:27",
-      "queueNo": "PT-009"
-    },
-    "690602101019": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "14:01:18",
-      "queueNo": "PT-011"
-    },
-    "690602000632": {
-      "status": "done",
-      "servicePoint": "ช่อง 2",
-      "calledAt": "13:20:35",
-      "queueNo": "D026"
-    },
-    "690602103626": {
+    "690603000008": {
       "status": "waiting",
-      "servicePoint": "ช่อง 2",
-      "calledAt": "13:20:10",
-      "queueNo": "PT-012"
+      "servicePoint": "1",
+      "calledAt": "11:50:17",
+      "queueNo": "D003"
     },
-    "690602000348": {
+    "690603000012": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:26:28",
+      "queueNo": "48",
+      "mode": "cur_dep"
+    },
+    "690603000014": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "09:17:05",
+      "queueNo": "D005"
+    },
+    "690603000015": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "09:17:48",
+      "queueNo": "D006"
+    },
+    "690603000020": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "09:18:06",
+      "queueNo": "D007"
+    },
+    "690603000022": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "09:28:04",
+      "queueNo": "68"
+    },
+    "690603000024": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "09:28:09",
+      "queueNo": "74"
+    },
+    "690603000027": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "09:28:32",
+      "queueNo": "79"
+    },
+    "690603090207": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "09:34:48",
+      "queueNo": "83"
+    },
+    "690603000031": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "09:35:26",
+      "queueNo": "90"
+    },
+    "690603000032": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "09:35:34",
+      "queueNo": "91"
+    },
+    "690603000033": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "09:36:06",
+      "queueNo": "92"
+    },
+    "690603072543": {
+      "status": "calling",
+      "servicePoint": "1",
+      "calledAt": "15:19:29",
+      "queueNo": "16",
+      "mode": "opd"
+    },
+    "690603072913": {
+      "status": "calling",
+      "servicePoint": "1",
+      "calledAt": "15:19:39",
+      "queueNo": "17",
+      "mode": "opd"
+    },
+    "690603073054": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "14:13:40",
+      "queueNo": "ER014",
+      "mode": "slot"
+    },
+    "690603073311": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:25:16",
+      "queueNo": "19",
+      "mode": "cur_dep"
+    },
+    "690603073510": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "09:50:24",
+      "queueNo": "22"
+    },
+    "690603074110": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "09:51:45",
+      "queueNo": "25"
+    },
+    "690603074248": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "14:13:56",
+      "queueNo": "ER015",
+      "mode": "slot"
+    },
+    "690603074528": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:32:45",
+      "queueNo": "27",
+      "mode": "cur_dep"
+    },
+    "690603075428": {
+      "status": "waiting",
+      "servicePoint": "3",
+      "calledAt": "13:32:55",
+      "queueNo": "30",
+      "mode": "cur_dep"
+    },
+    "690603075758": {
+      "status": "waiting",
+      "servicePoint": "3",
+      "calledAt": "09:53:13",
+      "queueNo": "32"
+    },
+    "690603080424": {
+      "status": "waiting",
+      "servicePoint": "3",
+      "calledAt": "09:53:20",
+      "queueNo": "40"
+    },
+    "690603000002": {
+      "status": "waiting",
+      "servicePoint": "3",
+      "calledAt": "09:53:28",
+      "queueNo": "21"
+    },
+    "690603080503": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "09:55:02",
+      "queueNo": "41"
+    },
+    "690603081238": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "10:00:33",
+      "queueNo": "43"
+    },
+    "690603082152": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "10:00:55",
+      "queueNo": "45"
+    },
+    "690603000034": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:26:32",
+      "queueNo": "96",
+      "mode": "cur_dep"
+    },
+    "690603000036": {
+      "status": "waiting",
+      "servicePoint": "3",
+      "calledAt": "10:01:30",
+      "queueNo": "D016"
+    },
+    "690603004557": {
+      "status": "calling",
+      "servicePoint": "1",
+      "calledAt": "15:11:47",
+      "queueNo": "ER001",
+      "mode": "slot"
+    },
+    "690603010738": {
       "status": "done",
       "servicePoint": "1",
-      "calledAt": "14:12:40",
-      "queueNo": "534"
+      "calledAt": "15:17:58",
+      "queueNo": "ER002",
+      "mode": "slot"
     },
-    "690602000350": {
-      "status": "done",
+    "690603014540": {
+      "status": "skip",
       "servicePoint": "1",
-      "calledAt": "14:25:42",
-      "queueNo": "AGP002"
+      "calledAt": "14:20:44",
+      "queueNo": "ER003",
+      "mode": "slot_cur"
     },
-    "690602000352": {
+    "690603033829": {
+      "status": "calling",
+      "servicePoint": "1",
+      "calledAt": "15:18:50",
+      "queueNo": "ER005",
+      "mode": "slot"
+    },
+    "690603034654": {
+      "status": "waiting",
+      "servicePoint": "3",
+      "calledAt": "10:06:56",
+      "queueNo": "ER006"
+    },
+    "690603000037": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "10:07:44",
+      "queueNo": "D017"
+    },
+    "690603000424": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:24:38",
+      "queueNo": "1",
+      "mode": "opd"
+    },
+    "690603043337": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:26:01",
+      "queueNo": "10",
+      "mode": "opd"
+    },
+    "690603070237": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:26:06",
+      "queueNo": "15",
+      "mode": "opd"
+    },
+    "690603075001": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:26:11",
+      "queueNo": "28",
+      "mode": "opd"
+    },
+    "690603000038": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:26:48",
+      "queueNo": "101",
+      "mode": "cur_dep"
+    },
+    "690603000052": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:27:07",
+      "queueNo": "134",
+      "mode": "cur_dep"
+    },
+    "690603000057": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:27:10",
+      "queueNo": "143",
+      "mode": "cur_dep"
+    },
+    "690603114442": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:31:17",
+      "queueNo": "148",
+      "mode": "cur_dep"
+    },
+    "690603000063": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:31:19",
+      "queueNo": "168",
+      "mode": "cur_dep"
+    },
+    "690603000066": {
+      "status": "waiting",
+      "servicePoint": "3",
+      "calledAt": "13:31:27",
+      "queueNo": "172",
+      "mode": "cur_dep"
+    },
+    "690603064403": {
+      "status": "waiting",
+      "servicePoint": "3",
+      "calledAt": "13:31:38",
+      "queueNo": "14",
+      "mode": "cur_dep"
+    },
+    "690603080114": {
+      "status": "waiting",
+      "servicePoint": "3",
+      "calledAt": "13:31:47",
+      "queueNo": "36",
+      "mode": "cur_dep"
+    },
+    "690603123242": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:33:24",
+      "queueNo": "158",
+      "mode": "cur_dep"
+    },
+    "690603045243": {
+      "status": "cleared",
+      "servicePoint": "1",
+      "calledAt": "14:28:17",
+      "queueNo": "ER010",
+      "mode": "slot_cur"
+    },
+    "690603061510": {
+      "status": "cleared",
+      "servicePoint": "1",
+      "calledAt": "14:28:31",
+      "queueNo": "ER011",
+      "mode": "slot_cur"
+    },
+    "690603122457": {
+      "status": "calling",
+      "servicePoint": "1",
+      "calledAt": "14:44:37",
+      "queueNo": "ER032",
+      "mode": "slot_cur"
+    },
+    "690603122711": {
+      "status": "cleared",
+      "servicePoint": "1",
+      "calledAt": "14:44:59",
+      "queueNo": "ER034",
+      "mode": "slot_cur"
+    },
+    "690603125122": {
       "status": "skip",
       "servicePoint": "3",
-      "calledAt": "14:01:50",
-      "queueNo": "539"
+      "calledAt": "14:45:09",
+      "queueNo": "ER035",
+      "mode": "slot_cur"
     },
-    "690602000357": {
-      "status": "cleared",
-      "servicePoint": "3",
-      "calledAt": "14:02:16",
-      "queueNo": "544"
+    "690603131446": {
+      "status": "skip",
+      "servicePoint": "1",
+      "calledAt": "15:01:32",
+      "queueNo": "ER038",
+      "mode": "slot_cur"
     },
-    "690602000339": {
+    "690603133645": {
       "status": "done",
       "servicePoint": "1",
-      "calledAt": "14:12:35",
-      "queueNo": "524"
+      "calledAt": "15:01:47",
+      "queueNo": "ER040",
+      "mode": "slot_cur"
     },
-    "690602000342": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "14:14:36",
-      "queueNo": "527"
-    },
-    "690602000363": {
-      "status": "cleared",
-      "servicePoint": "3",
-      "calledAt": "14:16:01",
-      "queueNo": "551"
-    },
-    "690602063750": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "14:28:43",
-      "queueNo": "263"
-    },
-    "690602000161": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "14:31:14",
-      "queueNo": "GP-009"
-    },
-    "690602000163": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "14:31:31",
-      "queueNo": "GP-010"
-    },
-    "690602000609": {
-      "status": "done",
-      "servicePoint": "3",
-      "calledAt": "14:31:54",
-      "queueNo": "950"
-    },
-    "690602000612": {
-      "status": "done",
-      "servicePoint": "3",
-      "calledAt": "14:32:07",
-      "queueNo": "955"
-    },
-    "690602083023": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "14:36:50",
-      "queueNo": "622"
-    },
-    "690602125003": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "14:37:27",
-      "queueNo": "GP-062"
-    },
-    "690602000113": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "14:37:41",
-      "queueNo": "D001"
-    },
-    "690602000317": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "14:37:52",
-      "queueNo": "H001"
-    },
-    "690602000365": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "15:00:31",
-      "queueNo": "553"
-    },
-    "690602000370": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "15:01:22",
-      "queueNo": "560"
-    },
-    "690602000376": {
-      "status": "done",
-      "servicePoint": "3",
-      "calledAt": "15:01:30",
-      "queueNo": "569"
-    },
-    "690602000391": {
-      "status": "done",
-      "servicePoint": "3",
-      "calledAt": "15:01:43",
-      "queueNo": "588"
-    },
-    "690602000394": {
-      "status": "done",
-      "servicePoint": "3",
-      "calledAt": "15:01:50",
-      "queueNo": "591"
-    },
-    "690602000403": {
-      "status": "done",
-      "servicePoint": "3",
-      "calledAt": "15:02:15",
-      "queueNo": "601"
-    },
-    "690602091900": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "15:03:36",
-      "queueNo": "774"
-    },
-    "690602081752": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "15:03:50",
-      "queueNo": "575"
-    },
-    "690602000405": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "15:06:47",
-      "queueNo": "605"
-    },
-    "690602000409": {
-      "status": "done",
-      "servicePoint": "4",
-      "calledAt": "15:06:56",
-      "queueNo": "612"
-    },
-    "690602000411": {
-      "status": "done",
-      "servicePoint": "4",
-      "calledAt": "15:07:03",
-      "queueNo": "617"
-    },
-    "690602000416": {
-      "status": "done",
-      "servicePoint": "4",
-      "calledAt": "15:07:19",
-      "queueNo": "624"
-    },
-    "690602000422": {
-      "status": "done",
-      "servicePoint": "4",
-      "calledAt": "15:07:37",
-      "queueNo": "634"
-    },
-    "690602000425": {
-      "status": "done",
-      "servicePoint": "4",
-      "calledAt": "15:07:48",
-      "queueNo": "639"
-    },
-    "690602093107": {
-      "status": "done",
-      "servicePoint": "4",
-      "calledAt": "15:07:53",
-      "queueNo": "796"
-    },
-    "690602094436": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "15:08:03",
-      "queueNo": "823"
-    },
-    "690602085915": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "15:09:16",
-      "queueNo": "723"
-    },
-    "690602094520": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "15:09:36",
-      "queueNo": "824"
-    },
-    "690602094611": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "15:13:04",
-      "queueNo": "828"
-    },
-    "690602095406": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "15:17:23",
-      "queueNo": "845"
-    },
-    "690602104144": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "15:17:55",
-      "queueNo": "922"
-    },
-    "690602104731": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "15:18:08",
-      "queueNo": "933"
-    },
-    "690602104830": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "15:42:24",
-      "queueNo": "936"
-    },
-    "690602000430": {
-      "status": "done",
-      "servicePoint": "2",
-      "calledAt": "15:52:24",
-      "queueNo": "649"
-    },
-    "690602000186": {
-      "status": "done",
-      "servicePoint": "3",
-      "calledAt": "15:52:52",
-      "queueNo": "GY001"
-    },
-    "690602000213": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "15:53:02",
-      "queueNo": "GY002"
-    },
-    "690602000197": {
+    "690603140819": {
       "status": "calling",
       "servicePoint": "1",
-      "calledAt": "15:54:23",
-      "queueNo": "GP-015"
+      "calledAt": "15:04:27",
+      "queueNo": "ER042",
+      "mode": "slot_cur"
     },
-    "690602040012": {
+    "690603075539": {
       "status": "calling",
       "servicePoint": "1",
-      "calledAt": "15:54:37",
-      "queueNo": "7"
-    },
-    "690602040014": {
-      "status": "calling",
-      "servicePoint": "3",
-      "calledAt": "15:54:46",
-      "queueNo": "8"
-    },
-    "690602040016": {
-      "status": "calling",
-      "servicePoint": "3",
-      "calledAt": "15:54:49",
-      "queueNo": "9"
-    },
-    "690602040018": {
-      "status": "calling",
-      "servicePoint": "3",
-      "calledAt": "15:54:51",
-      "queueNo": "10"
-    },
-    "690602000170": {
-      "status": "calling",
-      "servicePoint": "3",
-      "calledAt": "16:15:57",
-      "queueNo": "347"
-    },
-    "690602000179": {
-      "status": "calling",
-      "servicePoint": "3",
-      "calledAt": "16:16:23",
-      "queueNo": "356"
+      "calledAt": "15:19:20",
+      "queueNo": "31",
+      "mode": "opd"
     }
   }
 }

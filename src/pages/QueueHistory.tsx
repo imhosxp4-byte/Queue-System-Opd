@@ -1,13 +1,28 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getQueueList, callQueue, updateQueueStatus } from '../lib/api'
+import { getQueueList, callQueue, updateQueueStatus, getServicePoints } from '../lib/api'
 import './QueueHistory.css'
+
+type HistoryMode = 'slot' | 'opd' | 'cur_dep' | 'slot_cur'
+
+const MODE_LABELS: Record<HistoryMode, string> = {
+  slot: 'Queue_Prefix',
+  slot_cur: 'Queue_Prefix_Room',
+  opd: 'Queue_OPD',
+  cur_dep: 'Queue_OPD_Room',
+}
+const MODE_GROUP: Record<HistoryMode, 'prefix' | 'opd'> = {
+  slot: 'prefix', slot_cur: 'prefix',
+  opd: 'opd', cur_dep: 'opd',
+}
 
 export default function QueueHistoryPage() {
   const navigate = useNavigate()
+  const [mode, setMode] = useState<HistoryMode>(() => (localStorage.getItem('qh_mode') as HistoryMode) || 'slot')
   const [queues, setQueues] = useState<QueueItem[]>([])
   const [loading, setLoading] = useState(false)
-  const [servicePoint, setServicePoint] = useState(sessionStorage.getItem('lastSP') || '1')
+  const [servicePoints, setServicePoints] = useState<ServicePoint[]>([])
+  const [servicePoint, setServicePoint] = useState(sessionStorage.getItem('lastSP') || '')
   const [filterDept, setFilterDept] = useState('')
   const [actionId, setActionId] = useState<string | null>(null)
   const [clock, setClock] = useState(new Date())
@@ -22,17 +37,27 @@ export default function QueueHistoryPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await getQueueList()
+      const res = await getQueueList(mode)
       if (res.success) setQueues(res.data)
     } catch {}
     setLoading(false)
-  }, [])
+  }, [mode])
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
     const t = setInterval(load, 10000)
     return () => clearInterval(t)
   }, [load])
+
+  useEffect(() => {
+    getServicePoints().then(sps => {
+      setServicePoints(sps)
+      setServicePoint(prev => {
+        if (prev && sps.some(s => s.name === prev || s.id === prev)) return prev
+        return sps[0]?.name || ''
+      })
+    })
+  }, [])
 
   const deptOptions = Array.from(new Set(queues.map(q => q.department).filter(Boolean))).sort()
   const doneQueues    = queues.filter(q => q.status === 'done'    && (!filterDept || q.department === filterDept))
@@ -48,7 +73,7 @@ export default function QueueHistoryPage() {
   const handleRecall = async (q: QueueItem) => {
     setActionId(q.vn)
     try {
-      const res = await callQueue(q.vn, servicePoint)
+      const res = await callQueue(q.vn, servicePoint, mode)
       if (res.success) {
         flash(true, `เรียกซ้ำ ${res.queueNo || q.queue_slot || q.queue_no} สำเร็จ`)
         load()
@@ -118,13 +143,6 @@ export default function QueueHistoryPage() {
     }
   }
 
-  const SpBtn = ({ sp }: { sp: string }) => (
-    <button
-      className={`qh-sp-btn ${servicePoint === sp ? 'active' : ''}`}
-      onClick={() => { setServicePoint(sp); sessionStorage.setItem('lastSP', sp) }}
-    >{sp}</button>
-  )
-
   return (
     <div className="qh-bg">
       <header className="qh-topbar">
@@ -135,13 +153,34 @@ export default function QueueHistoryPage() {
           กลับ
         </button>
 
-        <h1 className="qh-title">
+        <div className="qh-title-wrap">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
             <circle cx="12" cy="12" r="10" stroke="#0D47A1" strokeWidth="2" />
             <path d="M12 6v6l4 2" stroke="#0D47A1" strokeWidth="2" strokeLinecap="round" />
           </svg>
-          ประวัติการเรียกคิว
-        </h1>
+          <h1 className="qh-title">ประวัติการเรียกคิว</h1>
+          <div className="qh-mode-switch">
+            <div className="qh-mode-group qh-group-prefix">
+              {(['slot', 'slot_cur'] as HistoryMode[]).map(m => (
+                <button key={m}
+                  className={`qh-mode-btn prefix${mode === m ? ' active' : ''}`}
+                  onClick={() => { setMode(m); localStorage.setItem('qh_mode', m); setQueues([]) }}>
+                  {MODE_LABELS[m]}
+                </button>
+              ))}
+            </div>
+            <div className="qh-mode-sep" />
+            <div className="qh-mode-group qh-group-opd">
+              {(['opd', 'cur_dep'] as HistoryMode[]).map(m => (
+                <button key={m}
+                  className={`qh-mode-btn opd${mode === m ? ' active' : ''}`}
+                  onClick={() => { setMode(m); localStorage.setItem('qh_mode', m); setQueues([]) }}>
+                  {MODE_LABELS[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
 
         <div className="qh-topbar-right">
           <div className="qh-dept-wrap">
@@ -153,7 +192,12 @@ export default function QueueHistoryPage() {
           </div>
           <div className="qh-sp-wrap">
             <span className="qh-sp-label">ช่องที่ใช้เรียกซ้ำ:</span>
-            {['1','2','3','4','5','6'].map(sp => <SpBtn key={sp} sp={sp} />)}
+            <select className="qh-sp-select" value={servicePoint}
+              onChange={e => { setServicePoint(e.target.value); sessionStorage.setItem('lastSP', e.target.value) }}>
+              {servicePoints.map(sp => (
+                <option key={sp.id} value={sp.name}>{sp.name}</option>
+              ))}
+            </select>
           </div>
           <button className="qh-refresh-btn" onClick={load} disabled={loading} title="รีเฟรช">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" className={loading ? 'qh-spin' : ''}>
