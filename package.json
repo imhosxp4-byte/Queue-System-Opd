@@ -47,19 +47,38 @@
     "ws": "^8.21.0"
   },
   "build": {
-    "appId": "com.bms.queue-opd",
-    "productName": "Queue OPD",
+    "appId": "com.bms.queue-system-opd",
+    "productName": "Queue-System-Opd",
+    "copyright": "BMS",
+    "directories": {
+      "output": "release"
+    },
     "win": {
-      "target": "nsis",
-      "icon": "resources/icon.ico"
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Queue System OPD",
+      "uninstallDisplayName": "Queue System OPD",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "perMachine": false
     },
     "files": [
-      "dist/**/*",
-      "dist-electron/**/*"
+      "out/**/*",
+      "server/**/*"
+    ],
+    "asarUnpack": [
+      "out/renderer/**/*"
     ]
   }
 }

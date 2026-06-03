@@ -12,7 +12,7 @@ const { Client: PgClient } = require('pg')
 const md5 = require('md5')
 
 const PORT = process.env.PORT || 3200
-const DATA_DIR = path.join(__dirname, '..', 'data')
+const DATA_DIR = process.env.QUEUE_DATA_DIR || path.join(__dirname, '..', 'data')
 const SETTINGS_FILE = path.join(DATA_DIR, 'db-settings.json')
 const DISPLAY_CONFIGS_FILE = path.join(DATA_DIR, 'display-configs.json')
 const TTS_CACHE_DIR = path.join(DATA_DIR, 'tts-cache')
@@ -91,8 +91,8 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
-// Serve built frontend
-const RENDERER_DIR = path.join(__dirname, '..', 'out', 'renderer')
+// Serve built frontend (supports env override for packaged Electron app)
+const RENDERER_DIR = process.env.RENDERER_DIR || path.join(__dirname, '..', 'out', 'renderer')
 if (fs.existsSync(RENDERER_DIR)) {
   app.use(express.static(RENDERER_DIR))
 }
@@ -818,26 +818,32 @@ function scheduleMidnightReset() {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-server.listen(PORT, () => {
-  console.log(`\n  Queue OPD Server`)
-  console.log(`  ─────────────────────────────────`)
-  console.log(`  ➜  Local:   http://localhost:${PORT}`)
-  console.log(`  ─────────────────────────────────`)
-  console.log(`  เปิด Chrome/Edge แล้วไปที่ http://localhost:${PORT}\n`)
+function startServer() {
+  server.on('error', (e) => {
+    if (e.code === 'EADDRINUSE') {
+      console.error(`\n  Port ${PORT} ถูกใช้งานอยู่แล้ว กรุณาปิดโปรแกรมอื่นหรือเปลี่ยน PORT\n`)
+    } else {
+      console.error('Server error:', e.message)
+    }
+    process.exit(1)
+  })
 
-  // Auto-open browser
+  server.listen(PORT, () => {
+    console.log(`\n  Queue OPD Server`)
+    console.log(`  ─────────────────────────────────`)
+    console.log(`  ➜  Local:   http://localhost:${PORT}`)
+    console.log(`  ─────────────────────────────────\n`)
+    scheduleMidnightReset()
+  })
+
+  return server
+}
+
+if (require.main === module) {
+  startServer()
+  // Auto-open browser only in standalone (non-Electron) mode
   const open = { win32: 'start', darwin: 'open', linux: 'xdg-open' }[process.platform] || 'start'
-  const { exec } = require('child_process')
   exec(`${open} http://localhost:${PORT}`)
+}
 
-  scheduleMidnightReset()
-})
-
-server.on('error', (e) => {
-  if (e.code === 'EADDRINUSE') {
-    console.error(`\n  Port ${PORT} ถูกใช้งานอยู่แล้ว กรุณาปิดโปรแกรมอื่นหรือเปลี่ยน PORT\n`)
-  } else {
-    console.error('Server error:', e.message)
-  }
-  process.exit(1)
-})
+module.exports = { startServer }
