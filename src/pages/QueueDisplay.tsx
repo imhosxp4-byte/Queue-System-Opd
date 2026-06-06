@@ -407,7 +407,8 @@ export default function QueueDisplayPage() {
       setRowAnimKeys(prev => ({ ...prev, [data.servicePoint]: (prev[data.servicePoint] || 0) + 1 }))
       if (cfg.ttsEnabled && cfg.ttsSource !== 'server') {
         playTTS(data.queueNo, data.servicePoint, cfg, (data as any).queueName)
-      } else if (cfg.soundEnabled) {
+      } else if (cfg.soundEnabled && !(cfg.ttsEnabled && cfg.ttsSource === 'server')) {
+        // Don't beep when server TTS is enabled — the TTS announcement replaces the beep
         playBeep()
       }
       setTimeout(() => getCallsToday().then(setNoShowQueues), 800)
@@ -426,6 +427,8 @@ export default function QueueDisplayPage() {
   // Play audio URL via AudioContext — returns Promise that resolves when audio ends
   const playAudioUrl = (url: string, volume: number): Promise<void> => {
     return new Promise(async (resolve) => {
+      let settled = false
+      const done = () => { if (!settled) { settled = true; resolve() } }
       try {
         if (!audioCtx.current) audioCtx.current = new AudioContext()
         if (audioCtx.current.state === 'suspended') await audioCtx.current.resume()
@@ -438,11 +441,13 @@ export default function QueueDisplayPage() {
         src.buffer = decoded
         src.connect(gain)
         gain.connect(audioCtx.current.destination)
-        src.onended = () => resolve()
+        src.onended = done
         src.start()
+        // Safety: resolve after audio duration + 2s in case onended doesn't fire
+        setTimeout(done, (decoded.duration * 1000) + 2000)
       } catch (e) {
         console.error('[playAudioUrl]', e)
-        resolve()
+        done()
       }
     })
   }
@@ -454,6 +459,8 @@ export default function QueueDisplayPage() {
     while (audioQueue.current.length > 0) {
       const item = audioQueue.current.shift()!
       await playAudioUrl(item.url, item.volume)
+      // Brief gap between announcements — sounds more natural
+      if (audioQueue.current.length > 0) await new Promise(r => setTimeout(r, 600))
     }
     audioPlaying.current = false
   }
