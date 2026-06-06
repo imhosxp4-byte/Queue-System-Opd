@@ -228,18 +228,19 @@ async function generateEdgeTTS(text, voiceName, rate) {
   const filename = `tts_${Date.now()}.mp3`
   const filepath = path.join(TTS_CACHE_DIR, filename)
 
+  console.log(`[EdgeTTS] voice=${voice} rate=${rate} text="${text.slice(0, 40)}"`)
   const tts = new MsEdgeTTS()
   await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3)
   const prosody = new ProsodyOptions()
-  prosody.rate = Number(rate) // 0.5 = ช้า, 1.0 = ปกติ, 2.0 = เร็ว
+  prosody.rate = Number(rate)
   const { audioStream } = tts.toStream(text, prosody)
 
   await new Promise((resolve, reject) => {
     const ws = fs.createWriteStream(filepath)
     audioStream.pipe(ws)
-    ws.on('finish', resolve)
-    ws.on('error', reject)
-    audioStream.on('error', reject)
+    ws.on('finish', () => { console.log(`[EdgeTTS] OK → ${filename}`); resolve() })
+    ws.on('error', (e) => { console.error('[EdgeTTS] write error:', e.message); reject(e) })
+    audioStream.on('error', (e) => { console.error('[EdgeTTS] stream error:', e.message); reject(e) })
   })
   cleanTTSCache(filename)
   return `/tts-audio/${filename}`
@@ -280,6 +281,18 @@ async function generateServerTTS(text, voiceName, rate) {
   }
   return generateSAPITTS(text, voiceName, rate)
 }
+
+// Test Edge TTS connectivity — open in browser: /api/tts/test
+app.get('/api/tts/test', async (req, res) => {
+  const voice = req.query.voice || 'th-TH-PremwadeeNeural'
+  const text = req.query.text || 'ทดสอบเสียงเปรมวดี'
+  try {
+    const url = await generateEdgeTTS(String(text), String(voice), 0.8)
+    res.json({ success: true, url, voice, text })
+  } catch (e) {
+    res.json({ success: false, error: e.message, voice, text })
+  }
+})
 
 // Preview TTS — generate audio and return URL for immediate playback
 app.post('/api/tts/preview', async (req, res) => {
