@@ -3,6 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { getDisplayConfigs, openDisplay } from '../lib/api'
 import './NavBar.css'
 
+
+
 const NAV_LINKS = [
   {
     path: '/queue-call',
@@ -37,8 +39,11 @@ export default function NavBar() {
   const location = useLocation()
   const officer = sessionStorage.getItem('officer') || 'ผู้ใช้งาน'
   const [showLinks, setShowLinks] = useState(false)
+  const [showDisplayNav, setShowDisplayNav] = useState(false)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const [savedKey, setSavedKey] = useState<string | null>(null)
   const linkRef = useRef<HTMLDivElement>(null)
+  const displayNavRef = useRef<HTMLDivElement>(null)
   const [serverOrigin, setServerOrigin] = useState(window.location.origin)
   const [displayConfigs, setDisplayConfigs] = useState<DisplayConfigItem[]>([])
 
@@ -50,10 +55,19 @@ export default function NavBar() {
   }, [])
 
   useEffect(() => {
-    if (showLinks) {
+    if (showLinks || showDisplayNav) {
       getDisplayConfigs().then(setDisplayConfigs).catch(() => {})
     }
-  }, [showLinks])
+  }, [showLinks, showDisplayNav])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (displayNavRef.current && !displayNavRef.current.contains(e.target as Node))
+        setShowDisplayNav(false)
+    }
+    if (showDisplayNav) document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showDisplayNav])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -72,22 +86,32 @@ export default function NavBar() {
     })
   }
 
+  const downloadShortcut = (name: string, path: string) => {
+    const url = serverOrigin + path
+    const a = document.createElement('a')
+    a.href = `/api/shortcut/download?name=${encodeURIComponent(name)}&url=${encodeURIComponent(url)}`
+    a.click()
+  }
+
+  const saveShortcut = async (key: string, name: string, path: string) => {
+    const url = serverOrigin + path
+    try {
+      const res = await fetch('/api/shortcut/desktop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, url })
+      })
+      const data = await res.json()
+      if (data.success) {
+        setSavedKey(key)
+        setTimeout(() => setSavedKey(null), 2500)
+      }
+    } catch {}
+  }
+
   const handleLogout = () => {
     sessionStorage.clear()
     navigate('/login')
-  }
-
-  const handleOpenDisplay = async () => {
-    try {
-      const configs = await getDisplayConfigs()
-      if (configs.length > 0) {
-        await openDisplay(configs[0])
-      } else {
-        navigate('/display-configs')
-      }
-    } catch {
-      navigate('/display-configs')
-    }
   }
 
   const isDisplayActive = location.pathname.startsWith('/display-configs')
@@ -121,20 +145,89 @@ export default function NavBar() {
           )
         })}
 
-        {/* Display — opens display directly, right-click/manage goes to /display-configs */}
-        <button
-          className={`app-nav-link ${isDisplayActive ? 'active' : ''}`}
-          onClick={handleOpenDisplay}
-          onContextMenu={e => { e.preventDefault(); navigate('/display-configs') }}
-          title="คลิก: เปิดจอแสดงคิว | คลิกขวา: จัดการหน้าจอ"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-            <rect x="2" y="4" width="20" height="14" rx="2" stroke="currentColor" strokeWidth="2" />
-            <path d="M8 20h8M12 18v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-          หน้าจอแสดงคิว
-          {isDisplayActive && <span className="app-nav-link-bar" />}
-        </button>
+        {/* Display — dropdown list of all display configs */}
+        <div className="app-nav-display-wrap" ref={displayNavRef}>
+          <button
+            className={`app-nav-link ${isDisplayActive || showDisplayNav ? 'active' : ''}`}
+            onClick={() => setShowDisplayNav(v => !v)}
+            title="เลือกจอแสดงคิว"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+              <rect x="2" y="4" width="20" height="14" rx="2" stroke="currentColor" strokeWidth="2" />
+              <path d="M8 20h8M12 18v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            หน้าจอแสดงคิว
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" style={{ marginLeft: 2, opacity: 0.6 }}>
+              <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            {(isDisplayActive || showDisplayNav) && <span className="app-nav-link-bar" />}
+          </button>
+
+          {showDisplayNav && (
+            <div className="app-nav-display-menu">
+              <div className="app-nav-display-header">เลือกจอแสดงคิว</div>
+
+              {displayConfigs.length === 0 ? (
+                <div className="app-nav-display-empty">
+                  ยังไม่มีจอแสดงคิว —{' '}
+                  <span className="app-nav-display-manage" onClick={() => { navigate('/display-configs'); setShowDisplayNav(false) }}>
+                    สร้างใหม่
+                  </span>
+                </div>
+              ) : (
+                displayConfigs.map(cfg => (
+                  <div key={cfg.id} className="app-nav-display-group">
+                    {/* Display row — คลิกเปิดจอ */}
+                    <div
+                      className="app-nav-display-item app-nav-display-item-head"
+                      onClick={() => { openDisplay(cfg); setShowDisplayNav(false) }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="app-nav-display-icon">
+                        <rect x="2" y="4" width="20" height="14" rx="2" stroke="currentColor" strokeWidth="2" />
+                        <path d="M8 20h8M12 18v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      </svg>
+                      <span className="app-nav-display-name">
+                        {cfg.name}
+                        {cfg.channels?.length ? <span className="app-nav-display-ch-count"> ({cfg.channels.length} ช่อง)</span> : null}
+                      </span>
+                    </div>
+                    {/* Channel rows — คลิกเลือกช่องเรียกคิว */}
+                    {cfg.channels?.map(ch => (
+                      <div
+                        key={ch}
+                        className="app-nav-display-channel-item"
+                        onClick={() => {
+                          const officer = sessionStorage.getItem('officer') || 'default'
+                          const prefs = JSON.parse(localStorage.getItem(`qc_prefs_${officer}`) || '{}')
+                          prefs.selectedDisplayId = cfg.id
+                          prefs.servicePointId = ch
+                          localStorage.setItem(`qc_prefs_${officer}`, JSON.stringify(prefs))
+                          window.dispatchEvent(new CustomEvent('qc-display-selected', { detail: { displayId: cfg.id, channel: ch } }))
+                          setShowDisplayNav(false)
+                        }}
+                      >
+                        <span className="app-nav-display-channel-dot" />
+                        ช่อง {ch}
+                      </div>
+                    ))}
+                  </div>
+                ))
+              )}
+
+              <div className="app-nav-display-divider" />
+              <div
+                className="app-nav-display-manage-row"
+                onClick={() => { navigate('/display-configs'); setShowDisplayNav(false) }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
+                  <path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                </svg>
+                จัดการหน้าจอแสดงคิว
+              </div>
+            </div>
+          )}
+        </div>
         {/* Copy Link dropdown */}
         <div className="app-nav-copylink-wrap" ref={linkRef}>
           <button
@@ -185,6 +278,11 @@ export default function NavBar() {
                         onClick={() => copyLink(key, path)}>
                         {copiedKey === key ? '✓ คัดลอกแล้ว' : 'คัดลอก'}
                       </button>
+                      <button className="app-nav-shortcut-btn"
+                        onClick={() => downloadShortcut(cfg.name, path)}
+                        title="ดาวน์โหลด Shortcut (.url)">
+                        ⬇ .url
+                      </button>
                     </div>
                   )
                 })
@@ -204,6 +302,11 @@ export default function NavBar() {
                     <button className={`app-nav-copylink-btn${copiedKey === p.path ? ' copied' : ''}`}
                       onClick={() => copyLink(p.path, p.path)}>
                       {copiedKey === p.path ? '✓ คัดลอกแล้ว' : 'คัดลอก'}
+                    </button>
+                    <button className="app-nav-shortcut-btn"
+                      onClick={() => downloadShortcut(p.label, p.path)}
+                      title="ดาวน์โหลด Shortcut (.url)">
+                      ⬇ .url
                     </button>
                   </div>
                 )

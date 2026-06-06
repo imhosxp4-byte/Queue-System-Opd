@@ -166,6 +166,75 @@
   color: #DC2626;
 }
 
+/* Display nav dropdown */
+.app-nav-display-wrap { position: relative; }
+.app-nav-display-menu {
+  position: absolute; top: calc(100% + 6px); left: 0;
+  min-width: 240px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: 0 10px 36px rgba(13,71,161,0.14);
+  z-index: 9999; overflow: hidden;
+  animation: navDropIn 0.13s ease; transform-origin: top left;
+}
+@keyframes navDropIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.app-nav-display-header {
+  padding: 10px 16px 7px;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase;
+  color: #90A4AE;
+}
+.app-nav-display-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 10px 16px;
+  cursor: pointer; transition: background 0.12s;
+  font-size: 14px; color: #1E3A5F; font-weight: 500;
+}
+.app-nav-display-item:hover { background: #EBF4FF; }
+.app-nav-display-icon { color: #1565C0; flex-shrink: 0; }
+.app-nav-display-name { flex: 1; }
+.app-nav-display-badge {
+  font-size: 11px; font-weight: 700;
+  padding: 2px 8px;
+  background: rgba(0,151,167,0.10); border-radius: 8px;
+  color: #0097A7; flex-shrink: 0;
+}
+.app-nav-display-empty {
+  padding: 12px 16px;
+  font-size: 13px; color: #90A4AE;
+}
+.app-nav-display-manage {
+  color: #1565C0; font-weight: 700; cursor: pointer; text-decoration: underline;
+}
+.app-nav-display-divider { height: 1px; background: #f0f4f8; margin: 4px 0; }
+.app-nav-display-group { }
+.app-nav-display-item-head { border-bottom: none; }
+.app-nav-display-ch-count { font-size: 12px; color: #0097A7; font-weight: 600; }
+.app-nav-display-channel-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 16px 7px 36px;
+  cursor: pointer; transition: background 0.12s;
+  font-size: 13px; color: #1565C0; font-weight: 600;
+}
+.app-nav-display-channel-item:hover { background: #EBF4FF; }
+.app-nav-display-channel-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #90CAF9; flex-shrink: 0;
+  transition: background 0.15s;
+}
+.app-nav-display-channel-item:hover .app-nav-display-channel-dot { background: #1565C0; }
+
+.app-nav-display-manage-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px;
+  font-size: 13px; color: #546E7A; font-weight: 600;
+  cursor: pointer; transition: background 0.12s;
+}
+.app-nav-display-manage-row:hover { background: #f5f8fa; color: #0D47A1; }
+
 /* Copy Link dropdown */
 .app-nav-copylink-wrap {
   position: relative;
@@ -236,3 +305,20 @@
 }
 .app-nav-copylink-btn:hover { background: #1565C0; color: #fff; border-color: #1565C0; }
 .app-nav-copylink-btn.copied { background: #dcfce7; color: #16a34a; border-color: #bbf7d0; }
+
+.app-nav-shortcut-btn {
+  padding: 5px 9px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #fff;
+  color: #64748b;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  title: attr(title);
+}
+.app-nav-shortcut-btn:hover { background: #f59e0b; color: #fff; border-color: #f59e0b; }
+.app-nav-shortcut-btn.saved { background: #dcfce7; color: #16a34a; border-color: #bbf7d0; }

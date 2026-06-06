@@ -1,409 +1,452 @@
 {
-  "date": "2026-06-03",
+  "date": "2026-06-06",
   "calls": {
-    "690603075858": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "15:04:30",
-      "queueNo": "GP001",
+    "690606083506": {
+      "status": "waiting",
+      "servicePoint": "4",
+      "calledAt": "11:47:39",
+      "queueNo": "ER026",
       "mode": "slot"
     },
-    "690603030309": {
-      "status": "skip",
-      "servicePoint": "1",
-      "calledAt": "14:27:59",
-      "queueNo": "ER004",
-      "mode": "slot_cur"
+    "690606080917": {
+      "status": "cleared",
+      "servicePoint": "",
+      "calledAt": "11:24:17",
+      "queueNo": "GP-001",
+      "mode": "slot"
     },
-    "690603000001": {
-      "status": "calling",
+    "690606000001": {
+      "status": "cleared",
       "servicePoint": "1",
-      "calledAt": "15:04:38",
+      "calledAt": "09:12:31",
       "queueNo": "D001",
       "mode": "slot"
     },
-    "690603000007": {
-      "status": "waiting",
+    "690606000002": {
+      "status": "skip",
       "servicePoint": "1",
-      "calledAt": "11:05:59",
-      "queueNo": "D002"
+      "calledAt": "13:30:46",
+      "queueNo": "D002",
+      "mode": "slot",
+      "department": "117 ห้องล้างแผล"
     },
-    "690603000008": {
-      "status": "waiting",
+    "690606081923": {
+      "status": "cleared",
       "servicePoint": "1",
-      "calledAt": "11:50:17",
-      "queueNo": "D003"
-    },
-    "690603000012": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "13:26:28",
-      "queueNo": "48",
-      "mode": "cur_dep"
-    },
-    "690603000014": {
-      "status": "waiting",
-      "servicePoint": "2",
-      "calledAt": "09:17:05",
-      "queueNo": "D005"
-    },
-    "690603000015": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "09:17:48",
-      "queueNo": "D006"
-    },
-    "690603000020": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "09:18:06",
-      "queueNo": "D007"
-    },
-    "690603000022": {
-      "status": "waiting",
-      "servicePoint": "2",
-      "calledAt": "09:28:04",
-      "queueNo": "68"
-    },
-    "690603000024": {
-      "status": "waiting",
-      "servicePoint": "2",
-      "calledAt": "09:28:09",
-      "queueNo": "74"
-    },
-    "690603000027": {
-      "status": "waiting",
-      "servicePoint": "2",
-      "calledAt": "09:28:32",
-      "queueNo": "79"
-    },
-    "690603090207": {
-      "status": "waiting",
-      "servicePoint": "2",
-      "calledAt": "09:34:48",
-      "queueNo": "83"
-    },
-    "690603000031": {
-      "status": "waiting",
-      "servicePoint": "2",
-      "calledAt": "09:35:26",
-      "queueNo": "90"
-    },
-    "690603000032": {
-      "status": "waiting",
-      "servicePoint": "2",
-      "calledAt": "09:35:34",
-      "queueNo": "91"
-    },
-    "690603000033": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "09:36:06",
-      "queueNo": "92"
-    },
-    "690603072543": {
-      "status": "calling",
-      "servicePoint": "1",
-      "calledAt": "15:19:29",
-      "queueNo": "16",
-      "mode": "opd"
-    },
-    "690603072913": {
-      "status": "calling",
-      "servicePoint": "1",
-      "calledAt": "15:19:39",
-      "queueNo": "17",
-      "mode": "opd"
-    },
-    "690603073054": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "14:13:40",
-      "queueNo": "ER014",
+      "calledAt": "11:46:47",
+      "queueNo": "GP-002",
       "mode": "slot"
     },
-    "690603073311": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "13:25:16",
-      "queueNo": "19",
-      "mode": "cur_dep"
-    },
-    "690603073510": {
-      "status": "waiting",
+    "690606000003": {
+      "status": "cleared",
       "servicePoint": "2",
-      "calledAt": "09:50:24",
-      "queueNo": "22"
-    },
-    "690603074110": {
-      "status": "waiting",
-      "servicePoint": "2",
-      "calledAt": "09:51:45",
-      "queueNo": "25"
-    },
-    "690603074248": {
-      "status": "waiting",
-      "servicePoint": "2",
-      "calledAt": "14:13:56",
-      "queueNo": "ER015",
+      "calledAt": "09:13:04",
+      "queueNo": "D003",
       "mode": "slot"
     },
-    "690603074528": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "13:32:45",
-      "queueNo": "27",
-      "mode": "cur_dep"
-    },
-    "690603075428": {
-      "status": "waiting",
-      "servicePoint": "3",
-      "calledAt": "13:32:55",
-      "queueNo": "30",
-      "mode": "cur_dep"
-    },
-    "690603075758": {
-      "status": "waiting",
-      "servicePoint": "3",
-      "calledAt": "09:53:13",
-      "queueNo": "32"
-    },
-    "690603080424": {
-      "status": "waiting",
-      "servicePoint": "3",
-      "calledAt": "09:53:20",
-      "queueNo": "40"
-    },
-    "690603000002": {
-      "status": "waiting",
-      "servicePoint": "3",
-      "calledAt": "09:53:28",
-      "queueNo": "21"
-    },
-    "690603080503": {
-      "status": "waiting",
+    "690606000004": {
+      "status": "skip",
       "servicePoint": "2",
-      "calledAt": "09:55:02",
-      "queueNo": "41"
+      "calledAt": "13:31:34",
+      "queueNo": "D004",
+      "mode": "slot",
+      "department": "117 ห้องล้างแผล"
     },
-    "690603081238": {
-      "status": "waiting",
-      "servicePoint": "2",
-      "calledAt": "10:00:33",
-      "queueNo": "43"
-    },
-    "690603082152": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "10:00:55",
-      "queueNo": "45"
-    },
-    "690603000034": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "13:26:32",
-      "queueNo": "96",
-      "mode": "cur_dep"
-    },
-    "690603000036": {
-      "status": "waiting",
-      "servicePoint": "3",
-      "calledAt": "10:01:30",
-      "queueNo": "D016"
-    },
-    "690603004557": {
+    "690606000005": {
       "status": "calling",
-      "servicePoint": "1",
-      "calledAt": "15:11:47",
-      "queueNo": "ER001",
-      "mode": "slot"
+      "servicePoint": "3",
+      "calledAt": "13:34:33",
+      "queueNo": "D005",
+      "mode": "slot",
+      "department": "117 ห้องล้างแผล"
     },
-    "690603010738": {
-      "status": "done",
-      "servicePoint": "1",
-      "calledAt": "15:17:58",
+    "690606000006": {
+      "status": "calling",
+      "servicePoint": "3",
+      "calledAt": "13:33:32",
+      "queueNo": "D006",
+      "mode": "slot",
+      "department": "117 ห้องล้างแผล"
+    },
+    "690606000015": {
+      "status": "calling",
+      "servicePoint": "3",
+      "calledAt": "13:33:53",
+      "queueNo": "D007",
+      "mode": "slot",
+      "department": "117 ห้องล้างแผล"
+    },
+    "690606000016": {
+      "status": "calling",
+      "servicePoint": "3",
+      "calledAt": "13:34:21",
+      "queueNo": "D008",
+      "mode": "slot",
+      "department": "117 ห้องล้างแผล"
+    },
+    "690606000018": {
+      "status": "calling",
+      "servicePoint": "3",
+      "calledAt": "13:35:02",
+      "queueNo": "D009",
+      "mode": "slot",
+      "department": "117 ห้องล้างแผล"
+    },
+    "690606004634": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "12:53:06",
       "queueNo": "ER002",
-      "mode": "slot"
+      "mode": "slot",
+      "department": "134 ER คุณภาพ ER"
     },
-    "690603014540": {
-      "status": "skip",
-      "servicePoint": "1",
-      "calledAt": "14:20:44",
+    "690606011706": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "12:53:24",
       "queueNo": "ER003",
-      "mode": "slot_cur"
+      "mode": "slot",
+      "department": "134 ER คุณภาพ ER"
     },
-    "690603033829": {
-      "status": "calling",
+    "690606013117": {
+      "status": "waiting",
       "servicePoint": "1",
-      "calledAt": "15:18:50",
-      "queueNo": "ER005",
+      "calledAt": "12:56:41",
+      "queueNo": "ER004",
+      "mode": "slot",
+      "department": "134 ER คุณภาพ ER"
+    },
+    "690606000019": {
+      "status": "calling",
+      "servicePoint": "3",
+      "calledAt": "13:35:23",
+      "queueNo": "D010",
+      "mode": "slot",
+      "department": "117 ห้องล้างแผล"
+    },
+    "690606000022": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "09:37:10",
+      "queueNo": "D011",
       "mode": "slot"
     },
-    "690603034654": {
+    "690606000025": {
       "status": "waiting",
-      "servicePoint": "3",
-      "calledAt": "10:06:56",
-      "queueNo": "ER006"
+      "servicePoint": "2",
+      "calledAt": "09:41:04",
+      "queueNo": "D012",
+      "mode": "slot"
     },
-    "690603000037": {
+    "690606000026": {
       "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "10:07:44",
-      "queueNo": "D017"
+      "servicePoint": "4",
+      "calledAt": "09:41:11",
+      "queueNo": "D013",
+      "mode": "slot"
     },
-    "690603000424": {
+    "690606000013": {
       "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "13:24:38",
-      "queueNo": "1",
-      "mode": "opd"
+      "servicePoint": "2",
+      "calledAt": "12:53:18",
+      "queueNo": "AI001",
+      "mode": "slot",
+      "department": "142 ห้องฉีดยา"
     },
-    "690603043337": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "13:26:01",
-      "queueNo": "10",
-      "mode": "opd"
-    },
-    "690603070237": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "13:26:06",
-      "queueNo": "15",
-      "mode": "opd"
-    },
-    "690603075001": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "13:26:11",
-      "queueNo": "28",
-      "mode": "opd"
-    },
-    "690603000038": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "13:26:48",
-      "queueNo": "101",
-      "mode": "cur_dep"
-    },
-    "690603000052": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "13:27:07",
-      "queueNo": "134",
-      "mode": "cur_dep"
-    },
-    "690603000057": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "13:27:10",
-      "queueNo": "143",
-      "mode": "cur_dep"
-    },
-    "690603114442": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "13:31:17",
-      "queueNo": "148",
-      "mode": "cur_dep"
-    },
-    "690603000063": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "13:31:19",
-      "queueNo": "168",
-      "mode": "cur_dep"
-    },
-    "690603000066": {
-      "status": "waiting",
-      "servicePoint": "3",
-      "calledAt": "13:31:27",
-      "queueNo": "172",
-      "mode": "cur_dep"
-    },
-    "690603064403": {
-      "status": "waiting",
-      "servicePoint": "3",
-      "calledAt": "13:31:38",
-      "queueNo": "14",
-      "mode": "cur_dep"
-    },
-    "690603080114": {
-      "status": "waiting",
-      "servicePoint": "3",
-      "calledAt": "13:31:47",
-      "queueNo": "36",
-      "mode": "cur_dep"
-    },
-    "690603123242": {
-      "status": "waiting",
-      "servicePoint": "1",
-      "calledAt": "13:33:24",
-      "queueNo": "158",
-      "mode": "cur_dep"
-    },
-    "690603045243": {
-      "status": "cleared",
-      "servicePoint": "1",
-      "calledAt": "14:28:17",
-      "queueNo": "ER010",
-      "mode": "slot_cur"
-    },
-    "690603061510": {
-      "status": "cleared",
-      "servicePoint": "1",
-      "calledAt": "14:28:31",
-      "queueNo": "ER011",
-      "mode": "slot_cur"
-    },
-    "690603122457": {
+    "690606000007": {
       "status": "calling",
       "servicePoint": "1",
-      "calledAt": "14:44:37",
-      "queueNo": "ER032",
-      "mode": "slot_cur"
+      "calledAt": "13:16:27",
+      "queueNo": "175",
+      "mode": "opd",
+      "department": "142 ห้องฉีดยา"
     },
-    "690603122711": {
+    "690606000008": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "12:08:18",
+      "queueNo": "I002",
+      "mode": "slot",
+      "department": "142 ห้องฉีดยา"
+    },
+    "690606013244": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "12:56:47",
+      "queueNo": "ER005",
+      "mode": "slot",
+      "department": "134 ER คุณภาพ ER"
+    },
+    "690606013403": {
       "status": "cleared",
       "servicePoint": "1",
-      "calledAt": "14:44:59",
-      "queueNo": "ER034",
-      "mode": "slot_cur"
+      "calledAt": "11:05:25",
+      "queueNo": "ER006",
+      "mode": "slot"
     },
-    "690603125122": {
-      "status": "skip",
-      "servicePoint": "3",
-      "calledAt": "14:45:09",
-      "queueNo": "ER035",
-      "mode": "slot_cur"
-    },
-    "690603131446": {
-      "status": "skip",
+    "690606015031": {
+      "status": "waiting",
       "servicePoint": "1",
-      "calledAt": "15:01:32",
-      "queueNo": "ER038",
+      "calledAt": "12:56:48",
+      "queueNo": "ER007",
+      "mode": "slot",
+      "department": "134 ER คุณภาพ ER"
+    },
+    "690606044903": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "12:56:58",
+      "queueNo": "ER008",
+      "mode": "slot",
+      "department": "134 ER คุณภาพ ER"
+    },
+    "690606053325": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "13:00:14",
+      "queueNo": "ER011",
+      "mode": "slot",
+      "department": "134 ER คุณภาพ ER"
+    },
+    "690606000029": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "11:09:23",
+      "queueNo": "219",
+      "mode": "opd"
+    },
+    "690606040000": {
+      "status": "done",
+      "servicePoint": "2",
+      "calledAt": "11:11:29",
+      "queueNo": "1",
+      "mode": "cur_dep"
+    },
+    "690606000040": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "11:12:54",
+      "queueNo": "D022",
       "mode": "slot_cur"
     },
-    "690603133645": {
+    "690606110706": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "12:56:15",
+      "queueNo": "AI002",
+      "mode": "slot",
+      "department": "142 ห้องฉีดยา"
+    },
+    "690606000030": {
+      "status": "waiting",
+      "servicePoint": "",
+      "calledAt": "11:33:32",
+      "queueNo": "D015",
+      "mode": "slot"
+    },
+    "690606000031": {
+      "status": "waiting",
+      "servicePoint": "3",
+      "calledAt": "11:37:37",
+      "queueNo": "D016",
+      "mode": "slot"
+    },
+    "690606000032": {
+      "status": "waiting",
+      "servicePoint": "7",
+      "calledAt": "11:37:49",
+      "queueNo": "D017",
+      "mode": "slot"
+    },
+    "690606000033": {
+      "status": "waiting",
+      "servicePoint": "อิอิ",
+      "calledAt": "11:38:10",
+      "queueNo": "D018",
+      "mode": "slot"
+    },
+    "690606000037": {
+      "status": "waiting",
+      "servicePoint": "ไอ้วุฒิ",
+      "calledAt": "11:38:41",
+      "queueNo": "D019",
+      "mode": "slot"
+    },
+    "690606045312": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "12:59:06",
+      "queueNo": "ER009",
+      "mode": "slot",
+      "department": "134 ER คุณภาพ ER"
+    },
+    "690606000010": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "12:07:54",
+      "queueNo": "TM001",
+      "mode": "slot",
+      "department": "201 ห้องตรวจ 1 แพทย์แผนไทย"
+    },
+    "690606000012": {
+      "status": "waiting",
+      "servicePoint": "5",
+      "calledAt": "11:40:11",
+      "queueNo": "TM002",
+      "mode": "slot"
+    },
+    "690606000021": {
+      "status": "waiting",
+      "servicePoint": "99",
+      "calledAt": "11:40:49",
+      "queueNo": "TM003",
+      "mode": "slot"
+    },
+    "690606084828": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "11:43:20",
+      "queueNo": "M-001",
+      "mode": "slot"
+    },
+    "690606000038": {
+      "status": "waiting",
+      "servicePoint": "3",
+      "calledAt": "11:44:10",
+      "queueNo": "D020",
+      "mode": "slot"
+    },
+    "690606000039": {
+      "status": "waiting",
+      "servicePoint": "4",
+      "calledAt": "11:44:28",
+      "queueNo": "D021",
+      "mode": "slot"
+    },
+    "690606000042": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "11:44:53",
+      "queueNo": "D023",
+      "mode": "slot"
+    },
+    "690606085814": {
       "status": "done",
       "servicePoint": "1",
-      "calledAt": "15:01:47",
-      "queueNo": "ER040",
-      "mode": "slot_cur"
-    },
-    "690603140819": {
-      "status": "calling",
-      "servicePoint": "1",
-      "calledAt": "15:04:27",
-      "queueNo": "ER042",
-      "mode": "slot_cur"
-    },
-    "690603075539": {
-      "status": "calling",
-      "servicePoint": "1",
-      "calledAt": "15:19:20",
-      "queueNo": "31",
+      "calledAt": "11:45:28",
+      "queueNo": "202",
       "mode": "opd"
+    },
+    "690606093204": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "11:45:53",
+      "queueNo": "226",
+      "mode": "opd"
+    },
+    "690606000043": {
+      "status": "waiting",
+      "servicePoint": "4",
+      "calledAt": "11:47:58",
+      "queueNo": "D024",
+      "mode": "slot"
+    },
+    "690606000051": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "12:59:27",
+      "queueNo": "AI003",
+      "mode": "slot",
+      "department": "142 ห้องฉีดยา"
+    },
+    "690606040400": {
+      "status": "done",
+      "servicePoint": "4",
+      "calledAt": "11:49:24",
+      "queueNo": "121",
+      "mode": "opd"
+    },
+    "690606010314": {
+      "status": "done",
+      "servicePoint": "4",
+      "calledAt": "11:49:48",
+      "queueNo": "130",
+      "mode": "opd"
+    },
+    "690606044359": {
+      "status": "calling",
+      "servicePoint": "1",
+      "calledAt": "11:50:18",
+      "queueNo": "136",
+      "mode": "opd"
+    },
+    "690606000047": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "11:50:46",
+      "queueNo": "267",
+      "mode": "opd"
+    },
+    "690606000048": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "11:57:58",
+      "queueNo": "269",
+      "mode": "opd"
+    },
+    "690606000023": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "11:58:18",
+      "queueNo": "TM004",
+      "mode": "slot"
+    },
+    "690606000027": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "12:02:25",
+      "queueNo": "TM005",
+      "mode": "slot"
+    },
+    "690606000049": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "12:06:51",
+      "queueNo": "D027",
+      "mode": "slot",
+      "department": "117 ห้องล้างแผล"
+    },
+    "690606000009": {
+      "status": "waiting",
+      "servicePoint": "1",
+      "calledAt": "12:08:24",
+      "queueNo": "I003",
+      "mode": "slot",
+      "department": "142 ห้องฉีดยา"
+    },
+    "690606000011": {
+      "status": "waiting",
+      "servicePoint": "4",
+      "calledAt": "12:08:34",
+      "queueNo": "I004",
+      "mode": "slot",
+      "department": "142 ห้องฉีดยา"
+    },
+    "690606051405": {
+      "status": "waiting",
+      "servicePoint": "2",
+      "calledAt": "13:00:04",
+      "queueNo": "ER010",
+      "mode": "slot",
+      "department": "134 ER คุณภาพ ER"
+    },
+    "690606072200": {
+      "status": "calling",
+      "servicePoint": "ช่อง 1",
+      "calledAt": "13:25:06",
+      "queueNo": "149",
+      "mode": "opd",
+      "department": "018 ห้องคลอด"
     }
   }
 }

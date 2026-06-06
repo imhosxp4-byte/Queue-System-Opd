@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getQueueList, callQueue, onQueueCalled, updateQueueStatus, getServicePoints } from '../lib/api'
+import { getQueueList, callQueue, onQueueCalled, updateQueueStatus, getDisplayConfigs, getDisplayQDConfig } from '../lib/api'
 import './QueueMini.css'
 
 type QueueStatus = 'waiting' | 'calling' | 'done' | 'skip'
@@ -9,8 +9,9 @@ type View = 'main' | 'waiting' | 'done' | 'skip'
 
 export default function QueueMiniPage() {
   const [queues, setQueues] = useState<QueueRow[]>([])
-  const [servicePoints, setServicePoints] = useState<ServicePoint[]>([])
-  const [servicePointId, setServicePointId] = useState('')
+  const [displayConfigs, setDisplayConfigs] = useState<DisplayConfigItem[]>([])
+  const [selectedDisplayId, setSelectedDisplayId] = useState(() => localStorage.getItem('qm_display_id') || '')
+  const [selectedChannel, setSelectedChannel] = useState(() => localStorage.getItem('qm_channel') || '')
   const [currentCalled, setCurrentCalled] = useState<{ queueNo: string; servicePoint: string } | null>(null)
   const [callingId, setCallingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -21,11 +22,19 @@ export default function QueueMiniPage() {
   const [manualLoading, setManualLoading] = useState(false)
   const [clock, setClock] = useState(new Date())
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [checkDisplayPopup, setCheckDisplayPopup] = useState<{ queueNo: string; px: number; py: number } | null>(null)
+  const [deptMismatchWarning, setDeptMismatchWarning] = useState<{ queueNo: string; dept: string; displayName: string; px: number; py: number } | null>(null)
+  const [qdFilterDepts, setQdFilterDepts] = useState<string[]>([])
+  const callNextBtnRef = useRef<HTMLButtonElement>(null)
   const [mode, setMode] = useState<QueueMode>(() => (localStorage.getItem('qc_mode') as QueueMode) || 'slot')
   const [view, setView] = useState<View>('main')
   const manualRef = useRef<HTMLInputElement>(null)
-  const [filterDept, setFilterDept] = useState<string>(() => {
-    try { return localStorage.getItem('qm_dept') || '' } catch { return '' }
+  const [localDept, setLocalDept] = useState<string>(() => {
+    // เริ่มต้นจาก main page filter (dept แรก) หรือค่าที่เคยเลือกไว้
+    try {
+      const mainDepts: string[] = JSON.parse(localStorage.getItem('qc_filter_depts') || '[]')
+      return mainDepts[0] || localStorage.getItem('qm_local_dept') || ''
+    } catch { return '' }
   })
 
   const W = 320, H = 580
@@ -41,19 +50,23 @@ export default function QueueMiniPage() {
     setMinimized(false)
   }
 
-  const currentSp = servicePoints.find(sp => sp.id === servicePointId)
-  const currentSpName = currentSp?.name || ''
+  const selectedDisplay = displayConfigs.find(d => d.id === selectedDisplayId)
+  const displayChannels: string[] = selectedDisplay?.channels || []
+  const currentSpName = selectedChannel || displayChannels[0] || ''
 
   useEffect(() => {
     const t = setInterval(() => setClock(new Date()), 1000)
     return () => clearInterval(t)
   }, [])
 
-  const loadSP = useCallback(async () => {
+  const loadDisplays = useCallback(async () => {
     try {
-      const data = await getServicePoints()
-      setServicePoints(data)
-      setServicePointId(prev => (!prev && data.length > 0) ? data[0].id : prev)
+      const data = await getDisplayConfigs()
+      setDisplayConfigs(data)
+      setSelectedDisplayId(prev => {
+        if (prev && data.find(d => d.id === prev)) return prev
+        return data.length > 0 ? data[0].id : prev
+      })
     } catch {}
   }, [])
 
@@ -81,6 +94,13 @@ export default function QueueMiniPage() {
         setQueues([])
         setCurrentCalled(null)
       }
+      if (e.key === 'qc_filter_depts' && e.newValue) {
+        try {
+          const depts: string[] = JSON.parse(e.newValue)
+          // auto-sync localDept ให้ตรงกับ main เสมอ
+          setLocalDept(depts[0] || '')
+        } catch {}
+      }
     }
     window.addEventListener('storage', handler)
     return () => window.removeEventListener('storage', handler)
@@ -100,7 +120,7 @@ export default function QueueMiniPage() {
     return () => document.removeEventListener('keydown', handler)
   }, [])
 
-  useEffect(() => { loadSP() }, [loadSP])
+  useEffect(() => { loadDisplays() }, [loadDisplays])
   useEffect(() => { loadQueues() }, [loadQueues])
   useEffect(() => {
     const t = setInterval(loadQueues, 15000)
@@ -112,18 +132,55 @@ export default function QueueMiniPage() {
     return off
   }, [loadQueues])
 
+  useEffect(() => {
+    if (!selectedDisplayId) { setQdFilterDepts([]); return }
+    getDisplayQDConfig(selectedDisplayId).then(cfg => {
+      const depts = cfg?.filterDepts
+      setQdFilterDepts(Array.isArray(depts) ? (depts as string[]) : [])
+    })
+  }, [selectedDisplayId])
+
   const flash = (ok: boolean, text: string) => {
     setMsg({ ok, text })
     setTimeout(() => setMsg(null), 3000)
   }
 
   const doCall = async (queue: QueueRow) => {
+    // ดึง filterDepts ล่าสุดก่อนเรียก
+    let activeFilter = qdFilterDepts
+    if (selectedDisplayId) {
+      try {
+        const cfg = await getDisplayQDConfig(selectedDisplayId)
+        const depts = cfg?.filterDepts
+        if (Array.isArray(depts)) { activeFilter = depts as string[]; setQdFilterDepts(activeFilter) }
+      } catch {}
+    }
+    // ถ้าคนไข้ไม่ตรงกับ filter จอ → ห้ามเรียก
+    if (activeFilter.length > 0 && queue.department && !activeFilter.includes(queue.department)) {
+      const selDisplay = displayConfigs.find(d => d.id === selectedDisplayId)
+      const r = callNextBtnRef.current?.getBoundingClientRect()
+      setDeptMismatchWarning({
+        queueNo: queue.queue_slot ?? queue.queue_no ?? '?',
+        dept: queue.department,
+        displayName: selDisplay?.name || '',
+        px: r ? r.left + r.width / 2 : window.innerWidth / 2,
+        py: r ? r.top - 8 : 200,
+      })
+      setTimeout(() => setDeptMismatchWarning(null), 5000)
+      return
+    }
     setCallingId(queue.vn)
     try {
       const res = await callQueue(queue.vn, currentSpName, mode)
       if (res.success) {
-        setCurrentCalled({ queueNo: res.queueNo || queue.queue_no, servicePoint: currentSpName })
-        flash(true, `เรียก ${res.queueNo || queue.queue_no} สำเร็จ`)
+        const calledNo = res.queueNo || queue.queue_no
+        setCurrentCalled({ queueNo: calledNo, servicePoint: currentSpName })
+        if (!selectedDisplayId) {
+          const r = callNextBtnRef.current?.getBoundingClientRect()
+          setCheckDisplayPopup({ queueNo: calledNo, px: r ? r.left + r.width / 2 : window.innerWidth / 2, py: r ? r.top - 8 : 200 })
+          setTimeout(() => setCheckDisplayPopup(null), 4000)
+        }
+        flash(true, `เรียก ${calledNo} สำเร็จ`)
         loadQueues()
       } else {
         flash(false, res.message || 'ไม่สำเร็จ')
@@ -147,7 +204,7 @@ export default function QueueMiniPage() {
     await doCall(q)
   }
 
-  const byDept = (q: QueueRow) => !filterDept || q.department === filterDept
+  const byDept = (q: QueueRow) => !localDept || q.department === localDept
 
   const handleCallNext = async () => {
     const next = queues.find(q => q.status === 'waiting' && byDept(q))
@@ -177,9 +234,15 @@ export default function QueueMiniPage() {
     try {
       const res = await callQueue(val, currentSpName, mode)
       if (res.success) {
-        setCurrentCalled({ queueNo: res.queueNo || val, servicePoint: currentSpName })
+        const calledNo = res.queueNo || val
+        setCurrentCalled({ queueNo: calledNo, servicePoint: currentSpName })
         setManualVal('')
-        flash(true, `เรียกคิว ${res.queueNo || val} สำเร็จ`)
+        if (!selectedDisplayId) {
+          const r2 = callNextBtnRef.current?.getBoundingClientRect()
+          setCheckDisplayPopup({ queueNo: calledNo, px: r2 ? r2.left + r2.width / 2 : window.innerWidth / 2, py: r2 ? r2.top - 8 : 200 })
+          setTimeout(() => setCheckDisplayPopup(null), 4000)
+        }
+        flash(true, `เรียกคิว ${calledNo} สำเร็จ`)
         loadQueues()
       } else {
         flash(false, res.message || 'ไม่พบคิว')
@@ -191,6 +254,25 @@ export default function QueueMiniPage() {
       manualRef.current?.focus()
     }
   }
+
+  // ── Keyboard shortcuts ──────────────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName.toLowerCase()
+      const inInput = tag === 'input' || tag === 'textarea' || tag === 'select'
+      if (e.key === 'F1') { e.preventDefault(); handleConfirm(); return }
+      if (e.key === 'F2') { e.preventDefault(); handleCallNext(); return }
+      if (e.key === 'F3') { e.preventDefault(); handleRecall(); return }
+      if (e.key === 'F4') { e.preventDefault(); handleNoShow(); return }
+      if (e.key === 'Escape') { setPendingCall(null); return }
+      // ตัวเลข/อักษร → focus manual input
+      if (!inInput && e.key.length === 1 && !e.ctrlKey && !e.altKey) {
+        manualRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  })
 
   const deptOptions = Array.from(new Set(queues.map(q => q.department).filter(Boolean))).sort()
 
@@ -258,13 +340,6 @@ export default function QueueMiniPage() {
           )}
         </div>
         <div className="qm-header-right">
-          <div className="qm-sp-row">
-            {servicePoints.length > 0 ? (
-              <select className="qm-sp-select" value={servicePointId} onChange={e => setServicePointId(e.target.value)}>
-                {servicePoints.map(sp => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
-              </select>
-            ) : <span className="qm-sp-none">ไม่มีช่อง</span>}
-          </div>
           <span className="qm-clock">
             {clock.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </span>
@@ -318,18 +393,18 @@ export default function QueueMiniPage() {
         <>
           {/* ── MAIN VIEW ──────────────────────────── */}
 
-          {/* Dept filter */}
+          {/* Dept / ห้องตรวจ filter */}
           <div className="qm-dept-bar">
-            <span className="qm-dept-label">แผนก</span>
+            <span className="qm-dept-label">ห้องตรวจ</span>
             <select
               className="qm-dept-select"
-              value={filterDept}
+              value={localDept}
               onChange={e => {
-                setFilterDept(e.target.value)
-                try { localStorage.setItem('qm_dept', e.target.value) } catch {}
+                setLocalDept(e.target.value)
+                try { localStorage.setItem('qm_local_dept', e.target.value) } catch {}
               }}
             >
-              <option value="">ทุกแผนก ({queues.filter(q => q.status === 'waiting').length})</option>
+              <option value="">ทุกห้อง ({queues.filter(q => q.status === 'waiting').length})</option>
               {deptOptions.map(d => (
                 <option key={d} value={d}>
                   {d} ({queues.filter(q => q.status === 'waiting' && q.department === d).length})
@@ -340,7 +415,44 @@ export default function QueueMiniPage() {
 
           {/* Serve card */}
           <div className="qm-serve-card">
-            <div className="qm-serve-label">กำลังให้บริการ · {currentSpName || '—'}</div>
+            <div className="qm-serve-card-top">
+              <span className="qm-serve-label">กำลังให้บริการ</span>
+              <div className="qm-serve-selectors">
+                <select
+                  className="qm-serve-display-select"
+                  value={selectedDisplayId}
+                  onChange={e => {
+                    const id = e.target.value
+                    setSelectedDisplayId(id)
+                    localStorage.setItem('qm_display_id', id)
+                    // reset channel เมื่อเปลี่ยนจอ
+                    const disp = displayConfigs.find(d => d.id === id)
+                    const firstCh = disp?.channels?.[0] || ''
+                    setSelectedChannel(firstCh)
+                    localStorage.setItem('qm_channel', firstCh)
+                  }}
+                >
+                  {displayConfigs.length === 0
+                    ? <option value="">ไม่มีจอ</option>
+                    : displayConfigs.map(d => <option key={d.id} value={d.id}>{d.name}</option>)
+                  }
+                </select>
+                {displayChannels.length > 0 && (
+                  <select
+                    className="qm-serve-sp-select"
+                    value={selectedChannel || displayChannels[0]}
+                    onChange={e => {
+                      setSelectedChannel(e.target.value)
+                      localStorage.setItem('qm_channel', e.target.value)
+                    }}
+                  >
+                    {displayChannels.map(ch => (
+                      <option key={ch} value={ch}>ช่อง {ch}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
             {currentCalled ? (
               <div className="qm-serve-no">{currentCalled.queueNo}</div>
             ) : (
@@ -350,19 +462,20 @@ export default function QueueMiniPage() {
 
           {/* Action buttons */}
           <div className="qm-actions">
-            <button className="qm-btn qm-btn-next" onClick={handleCallNext}
+            <button ref={callNextBtnRef} className="qm-btn qm-btn-next" onClick={handleCallNext}
               disabled={!!callingId || (!loading && !hasWaiting)}>
               {loading ? <span className="qm-spinner" />
                 : callingId ? <span className="qm-spinner" />
                 : <span>▶</span>}
               {loading ? 'กำลังโหลด...' : !hasWaiting ? 'ไม่มีคิวรอ' : 'เรียกถัดไป'}
+              <kbd className="qm-kbd">F2</kbd>
             </button>
             <div className="qm-actions-row2">
               <button className="qm-btn qm-btn-recall" onClick={handleRecall} disabled={!!callingId || !hasCalling}>
-                <span>↻</span> เรียกซ้ำ
+                <span>↻</span> เรียกซ้ำ <kbd className="qm-kbd">F3</kbd>
               </button>
               <button className="qm-btn qm-btn-noshow" onClick={handleNoShow} disabled={!!callingId || !hasCalling}>
-                <span>✕</span> ไม่มา
+                <span>✕</span> ไม่มา <kbd className="qm-kbd">F4</kbd>
               </button>
             </div>
           </div>
@@ -412,6 +525,25 @@ export default function QueueMiniPage() {
 
       {msg && <div className={`qm-toast ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</div>}
 
+      {deptMismatchWarning && (
+        <div className="qm-dept-mismatch-popup"
+          style={{ top: deptMismatchWarning.py, left: deptMismatchWarning.px }}
+          onClick={() => setDeptMismatchWarning(null)}>
+          <div className="qm-dept-mismatch-no">{deptMismatchWarning.queueNo}</div>
+          <div className="qm-dept-mismatch-dept">{deptMismatchWarning.dept}</div>
+          <div className="qm-dept-mismatch-msg">⚠️ ไม่ตรงกับจอ · {deptMismatchWarning.displayName}</div>
+        </div>
+      )}
+
+      {checkDisplayPopup && (
+        <div className="qm-check-display-popup"
+          style={{ top: checkDisplayPopup.py, left: checkDisplayPopup.px }}
+          onClick={() => setCheckDisplayPopup(null)}>
+          <div className="qm-check-display-no">{checkDisplayPopup.queueNo}</div>
+          <div className="qm-check-display-msg">🖥️ ตรวจสอบจุดแสดงคิว</div>
+        </div>
+      )}
+
       {/* Confirm modal */}
       {pendingCall && (
         <div className="qm-confirm-overlay" onClick={() => setPendingCall(null)}>
@@ -420,9 +552,9 @@ export default function QueueMiniPage() {
             <div className="qm-confirm-name">{pendingCall.queue_name || '—'}</div>
             <div className="qm-confirm-sp">ช่อง {currentSpName || '—'}</div>
             <div className="qm-confirm-btns">
-              <button className="qm-cbtn cancel" onClick={() => setPendingCall(null)}>ยกเลิก</button>
+              <button className="qm-cbtn cancel" onClick={() => setPendingCall(null)}>ยกเลิก <kbd className="qm-kbd" style={{color:'rgba(0,0,0,0.4)',background:'rgba(0,0,0,0.06)',borderColor:'rgba(0,0,0,0.15)'}}>Esc</kbd></button>
               <button className="qm-cbtn ok" onClick={handleConfirm} disabled={!!callingId}>
-                {callingId ? <span className="qm-spinner" /> : '📢'} เรียก
+                {callingId ? <span className="qm-spinner" /> : '📢'} เรียก <kbd className="qm-kbd">F1</kbd>
               </button>
             </div>
           </div>

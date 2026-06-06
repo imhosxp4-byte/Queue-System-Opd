@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import {
-  onDisplayConfig, onQueueCalled, onQueueStatusChanged, onQueueAudio, updateDisplayConfig,
+  onDisplayConfig, onQueueCalled, onQueueStatusChanged, onQueueAudio, onQueueClear, updateDisplayConfig,
   getSystemFonts, getServicePoints, getCallsToday, getQueueList,
   getQDDefaultConfig, saveQDDefaultConfig, getTTSVoices, getDisplayConfigById,
   getDisplayQDConfig, saveDisplayQDConfig,
@@ -60,6 +60,10 @@ interface QDConfig {
   hiddenSPs: string[]
   displayStation: string
   filterDepts: string[]
+  // Multi-column layout
+  numColumns: number
+  spColumns: Record<string, number>
+  spRows: Record<string, number>
   // Display identity (set from URL ?id=)
   displayConfigId: string
   displayConfigName: string
@@ -75,6 +79,8 @@ interface QDConfig {
   ttsRate: number
   ttsPitch: number
   ttsVolume: number
+  ttsShowName: boolean
+  maskLastName: boolean
 }
 
 const DEFAULT: QDConfig = {
@@ -123,6 +129,9 @@ const DEFAULT: QDConfig = {
   hiddenSPs: [],
   displayStation: '',
   filterDepts: [],
+  numColumns: 1,
+  spColumns: {},
+  spRows: {},
   displayConfigId: '',
   displayConfigName: '',
   displayChannels: [],
@@ -136,6 +145,8 @@ const DEFAULT: QDConfig = {
   ttsRate: 0.9,
   ttsPitch: 1.1,
   ttsVolume: 1.0,
+  ttsShowName: false,
+  maskLastName: false,
 }
 
 // Read display config ID from URL hash: /#/display?id=XXX
@@ -152,17 +163,40 @@ const URL_DISPLAY_ID = getDisplayIdFromURL()
 const STORAGE_KEY = URL_DISPLAY_ID ? `qd-config-${URL_DISPLAY_ID}` : 'qd-config'
 
 function fixConfig(merged: Record<string, unknown>): QDConfig {
-  const result = { ...DEFAULT, ...merged } as QDConfig
+  // strip undefined so DEFAULT values are used for missing/undefined keys
+  const clean = Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== undefined && v !== null))
+  const result = { ...DEFAULT, ...clean } as QDConfig
   if (result.fontSize > 20) result.fontSize = DEFAULT.fontSize
   if (!Array.isArray(result.hiddenSPs)) result.hiddenSPs = []
   if (typeof result.spDisplayNames !== 'object' || Array.isArray(result.spDisplayNames))
     result.spDisplayNames = {}
+  if (typeof result.numColumns !== 'number' || result.numColumns < 1) result.numColumns = 1
+  if (typeof result.spColumns !== 'object' || Array.isArray(result.spColumns)) result.spColumns = {}
+  if (typeof result.spRows !== 'object' || Array.isArray(result.spRows)) result.spRows = {}
   return result
 }
 
 function extractBadge(queueNo: string): string | null {
   const m = queueNo.match(/^([A-Za-ก-ฮ]+)/)
   return m ? m[1].toUpperCase() : null
+}
+
+// ปิด 4 ตัวท้ายนามสกุล → แสดงเป็น XXXX
+function maskName(fullName: string): string {
+  if (!fullName) return ''
+  const spaceIdx = fullName.lastIndexOf(' ')
+  if (spaceIdx === -1) return fullName // ไม่มีนามสกุล
+  const firstName = fullName.slice(0, spaceIdx)
+  const lastName = fullName.slice(spaceIdx + 1)
+  // แทนที่ 4 ตัวท้าย (หรือทั้งหมดถ้าสั้นกว่า 4) ด้วย XXXX
+  const visible = lastName.length > 4 ? lastName.slice(0, lastName.length - 4) : ''
+  return `${firstName} ${visible}XXXX`
+}
+
+// สำหรับ TTS: ใช้ชื่อเต็ม (fname + lname) ตามที่ตั้งค่าในจอแสดงผล
+// fullName = concat(fname, ' ', lname) เช่น "วิลาวัณย์ บุญลี"
+function nameForTTS(fullName: string): string {
+  return fullName || ''
 }
 
 export default function QueueDisplayPage() {
@@ -178,6 +212,7 @@ export default function QueueDisplayPage() {
 
   const [servicePoints, setServicePoints] = useState<ServicePoint[]>([])
   const [spQueues, setSpQueues] = useState<Record<string, string>>({})
+  const [spNames, setSpNames] = useState<Record<string, string>>({})
   const [rowAnimKeys, setRowAnimKeys] = useState<Record<string, number>>({})
   const [noShowQueues, setNoShowQueues] = useState<CallEntry[]>([])
   const [clock, setClock] = useState(new Date())
@@ -193,6 +228,36 @@ export default function QueueDisplayPage() {
   const [loadingVoices, setLoadingVoices] = useState(false)
   const resizeStartX = useRef(0)
   const resizeStartW = useRef(0)
+
+  // Password dialog for enabling ttsShowName
+  const [showNamePwdDialog, setShowNamePwdDialog] = useState(false)
+  const [namePwd, setNamePwd] = useState('')
+  const [namePwdError, setNamePwdError] = useState(false)
+  const namePwdRef = useRef<HTMLInputElement>(null)
+
+  const handleToggleShowName = (v: boolean) => {
+    if (v) {
+      // เปิด → ต้องกรอกรหัสผ่านก่อน
+      setNamePwd('')
+      setNamePwdError(false)
+      setShowNamePwdDialog(true)
+      setTimeout(() => namePwdRef.current?.focus(), 80)
+    } else {
+      // ปิด → ไม่ต้องยืนยัน
+      setConfig(c => ({ ...c, ttsShowName: false, maskLastName: false }))
+    }
+  }
+
+  const confirmNamePwd = () => {
+    if (namePwd === 'bms123456') {
+      setConfig(c => ({ ...c, ttsShowName: true }))
+      setShowNamePwdDialog(false)
+      setNamePwd('')
+    } else {
+      setNamePwdError(true)
+      namePwdRef.current?.select()
+    }
+  }
 
   // Keep configRef in sync for use inside effects without re-registering
   useEffect(() => { configRef.current = config }, [config])
@@ -238,7 +303,7 @@ export default function QueueDisplayPage() {
   // When settings panel opens: re-sync TTS config from server + reload server voices
   const TTS_KEYS_CONST: (keyof QDConfig)[] = [
     'ttsEnabled', 'ttsSource', 'ttsPrefix1', 'ttsMiddle', 'ttsSuffix',
-    'ttsVoiceName', 'ttsServerVoiceName', 'ttsRate', 'ttsPitch', 'ttsVolume', 'soundEnabled'
+    'ttsVoiceName', 'ttsServerVoiceName', 'ttsRate', 'ttsPitch', 'ttsVolume', 'soundEnabled', 'ttsShowName', 'maskLastName'
   ]
   useEffect(() => {
     if (!showSettings) return
@@ -290,7 +355,7 @@ export default function QueueDisplayPage() {
     return () => clearInterval(t)
   }, [])
 
-  // Poll no-show queues every 10s + load available depts
+  // Poll no-show queues every 15s + load available depts
   useEffect(() => {
     const refresh = async () => {
       const [calls, queueRes] = await Promise.all([
@@ -301,6 +366,21 @@ export default function QueueDisplayPage() {
       if (queueRes.success) {
         const depts = Array.from(new Set(queueRes.data.map((q: QueueItem) => q.department).filter(Boolean))).sort() as string[]
         setAvailDepts(depts)
+        // อัพเดตชื่อโดยใช้ spQueues เป็น reference (match queueNo → name)
+        // เพื่อป้องกันชื่อเก่า/ผิดช่องมาทับ
+        setSpQueues(prev => {
+          const nameMap: Record<string, string> = {}
+          Object.entries(prev).forEach(([sp, qno]) => {
+            if (!qno) return
+            const match = queueRes.data.find((q: QueueItem) =>
+              (q.queue_slot || q.queue_no) === qno && q.queue_name
+            )
+            if (match) nameMap[sp] = match.queue_name
+          })
+          if (Object.keys(nameMap).length > 0)
+            setSpNames(names => ({ ...names, ...nameMap }))
+          return prev
+        })
       }
     }
     refresh()
@@ -315,10 +395,14 @@ export default function QueueDisplayPage() {
       // Filter: if this display has an ID, only accept calls for this display (or untagged calls)
       if (cfg.displayConfigId && data.displayConfigId && data.displayConfigId !== cfg.displayConfigId) return
 
+      // Filter: department — ถ้าตั้งค่ากรองแผนกไว้ และ event มีข้อมูลแผนก ต้องตรงกัน
+      if (cfg.filterDepts.length > 0 && data.department && !cfg.filterDepts.includes(data.department)) return
+
       setSpQueues(prev => ({ ...prev, [data.servicePoint]: data.queueNo }))
+      setSpNames(prev => ({ ...prev, [data.servicePoint]: (data as any).queueName || '' }))
       setRowAnimKeys(prev => ({ ...prev, [data.servicePoint]: (prev[data.servicePoint] || 0) + 1 }))
       if (cfg.ttsEnabled && cfg.ttsSource !== 'server') {
-        playTTS(data.queueNo, data.servicePoint, cfg)
+        playTTS(data.queueNo, data.servicePoint, cfg, (data as any).queueName)
       } else if (cfg.soundEnabled) {
         playBeep()
       }
@@ -340,6 +424,7 @@ export default function QueueDisplayPage() {
     const off = onQueueAudio(data => {
       const cfg = configRef.current
       if (cfg.displayConfigId && data.displayConfigId && data.displayConfigId !== cfg.displayConfigId) return
+      if (cfg.filterDepts.length > 0 && (data as any).department && !cfg.filterDepts.includes((data as any).department)) return
       const audio = new Audio(data.audioUrl)
       audio.volume = cfg.ttsVolume ?? 1
       audio.play().catch(() => {})
@@ -354,6 +439,18 @@ export default function QueueDisplayPage() {
     })
     return off
   }, [])
+
+  // queue:clear — reset spQueues สำหรับจอนี้
+  useEffect(() => {
+    const off = onQueueClear(data => {
+      const cfg = configRef.current
+      // ถ้า event ระบุ displayConfigId ต้องตรงกับจอนี้จึงเคลีย
+      if (data.displayConfigId && cfg.displayConfigId && data.displayConfigId !== cfg.displayConfigId) return
+      setSpQueues({})
+      setSpNames({})
+    })
+    return off
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const playBeep = () => {
     try {
@@ -393,10 +490,13 @@ export default function QueueDisplayPage() {
     document.addEventListener('mouseup', onUp)
   }
 
-  const playTTS = (queueNo: string, servicePoint: string, cfg: QDConfig) => {
+  const playTTS = (queueNo: string, servicePoint: string, cfg: QDConfig, queueName?: string) => {
     if (!window.speechSynthesis) return
-    const text = [cfg.ttsPrefix1, queueNo, cfg.ttsMiddle, servicePoint, cfg.ttsSuffix]
-      .filter(Boolean).join(' ')
+    // เมื่อเปิดประกาศชื่อ: อ่านแค่นามสกุล (lname) แทนเลขคิว
+    const ttsName = queueName ? nameForTTS(queueName) : ''
+    const text = cfg.ttsShowName && ttsName
+      ? [cfg.ttsPrefix1, ttsName, cfg.ttsMiddle, servicePoint, cfg.ttsSuffix].filter(Boolean).join(' ')
+      : [cfg.ttsPrefix1, queueNo, cfg.ttsMiddle, servicePoint, cfg.ttsSuffix].filter(Boolean).join(' ')
     window.speechSynthesis.cancel()
     const utt = new SpeechSynthesisUtterance(text)
     utt.lang = 'th-TH'
@@ -422,7 +522,8 @@ export default function QueueDisplayPage() {
     if (URL_DISPLAY_ID) {
       await saveDisplayQDConfig(URL_DISPLAY_ID, config)
     } else {
-      await updateDisplayConfig(config as unknown as DisplayConfig)
+      await saveQDDefaultConfig(config)
+      updateDisplayConfig(config as unknown as DisplayConfig)
     }
     setShowSettings(false)
   }
@@ -470,12 +571,83 @@ export default function QueueDisplayPage() {
 
   const filteredNoShow = config.filterDepts.length === 0
     ? noShowQueues
-    : noShowQueues.filter(q => config.filterDepts.some(d => q.servicePoint?.includes(d) || true))
+    : noShowQueues.filter(q => !q.department || config.filterDepts.includes(q.department))
 
   const fontFace = `'${config.font}', 'Sarabun', 'Tahoma', sans-serif`
   const animClass = { fade: 'anim-fade', slide: 'anim-slide', scale: 'anim-scale', bounce: 'anim-bounce' }[config.animationType]
   const marqueeStyle = { animationDuration: `${config.footerScrollSpeed}s`, fontSize: config.footerFontSize }
   const border = `${config.borderWidth}px solid ${config.borderColor}`
+
+  const renderColumn = (sps: typeof visibleSPs, colIdx: number) => (
+    <div key={colIdx} className="qd-main" style={{ position: 'relative', borderRight: border }}>
+      {config.spColumnVisible && colIdx === 0 && (
+        <div className="qd-col-resizer" style={{ left: config.spColumnWidth }} onMouseDown={startResize} title="ลากเพื่อปรับความกว้าง" />
+      )}
+      <div className="qd-thead">
+        {config.spColumnVisible && (
+          <div className="qd-th qd-th-sp" style={{ width: config.spColumnWidth, minWidth: config.spColumnWidth, background: config.spHeaderBg, color: config.spHeaderColor, borderRight: border, borderBottom: border }}>
+            <span className="qd-th-label">{config.colSpHeader}</span>
+          </div>
+        )}
+        <div className="qd-th qd-th-queue" style={{ background: config.tableHeaderBg, color: config.tableHeaderColor, borderBottom: border }}>
+          {config.colQueueHeader}
+        </div>
+      </div>
+      <div className="qd-tbody">
+        {sps.length === 0 ? (
+          <div className="qd-empty">{servicePoints.length === 0 ? 'กำลังโหลด...' : '—'}</div>
+        ) : sps.map(sp => {
+          const displayName = config.spDisplayNames[sp.id] || config.spDisplayNames[sp.name] || sp.name
+          const queueNo = spQueues[sp.name] || spQueues[sp.id] || ''
+          const rawName = config.ttsShowName ? (spNames[sp.name] || spNames[sp.id] || '') : ''
+          const patientName = rawName && config.maskLastName ? maskName(rawName) : rawName
+          const badge = queueNo ? extractBadge(queueNo) : null
+          const rowKey = rowAnimKeys[sp.name] || rowAnimKeys[sp.id] || 0
+          return (
+            <div key={sp.id} className="qd-row" style={{ borderBottom: border }}>
+              {config.spColumnVisible && (
+                <div className="qd-td qd-td-sp" style={{ width: config.spColumnWidth, minWidth: config.spColumnWidth, background: config.spColumnBg, color: config.spColumnColor, fontSize: `${config.spFontSize}vw`, borderRight: border }}>
+                  {displayName}
+                </div>
+              )}
+              <div className="qd-td qd-td-queue" style={{ background: config.queueBg }}>
+                {queueNo ? (
+                  <div key={rowKey} className={`qd-queue-cell ${animClass}`}>
+                    {patientName ? (
+                      <>
+                        <span className="qd-queue-no-small" style={{ color: config.queueColor }}>{badge && <span className="qd-badge-inline">{badge}</span>}{queueNo}</span>
+                        <span className="qd-patient-name-main" style={{ color: config.queueColor, fontSize: `${config.fontSize * 0.65}vw` }}>{patientName}</span>
+                      </>
+                    ) : (
+                      <>
+                        {badge && <span className="qd-badge">{badge}</span>}
+                        <span className="qd-queue-no" style={{ color: config.queueColor, fontSize: `${config.fontSize}vw` }}>{queueNo}</span>
+                      </>
+                    )}
+                  </div>
+                ) : <span className="qd-dash">—</span>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+
+  // แบ่ง visibleSPs ตาม spColumns แล้ว sort ตาม spRows
+  const columnGroups: (typeof visibleSPs)[] = Array.from({ length: config.numColumns }, () => [])
+  visibleSPs.forEach(sp => {
+    const col = (config.spColumns[sp.id] ?? config.spColumns[sp.name] ?? 1)
+    const idx = Math.min(Math.max(col - 1, 0), config.numColumns - 1)
+    columnGroups[idx].push(sp)
+  })
+  columnGroups.forEach(group => {
+    group.sort((a, b) => {
+      const ra = config.spRows[a.id] ?? config.spRows[a.name] ?? 999
+      const rb = config.spRows[b.id] ?? config.spRows[b.name] ?? 999
+      return ra - rb
+    })
+  })
 
   return (
     <div className="qd-root" style={{ fontFamily: fontFace }}>
@@ -524,85 +696,8 @@ export default function QueueDisplayPage() {
       {/* ─── BODY ────────────────────────────────────────────── */}
       <div className="qd-body">
 
-        {/* ── Main table ─────────────────────────────────────── */}
-        <div className="qd-main" style={{ position: 'relative', borderRight: border }}>
-          {/* Drag-to-resize handle */}
-          {config.spColumnVisible && (
-            <div
-              className="qd-col-resizer"
-              style={{ left: config.spColumnWidth }}
-              onMouseDown={startResize}
-              title="ลากเพื่อปรับความกว้าง"
-            />
-          )}
-
-          <div className="qd-thead">
-            {config.spColumnVisible && (
-              <div
-                className="qd-th qd-th-sp"
-                style={{
-                  width: config.spColumnWidth,
-                  minWidth: config.spColumnWidth,
-                  background: config.spHeaderBg,
-                  color: config.spHeaderColor,
-                  borderRight: border,
-                  borderBottom: border,
-                }}
-              >
-                <span className="qd-th-label">{config.colSpHeader}</span>
-              </div>
-            )}
-            <div className="qd-th qd-th-queue" style={{ background: config.tableHeaderBg, color: config.tableHeaderColor, borderBottom: border }}>
-              {config.colQueueHeader}
-            </div>
-          </div>
-
-          <div className="qd-tbody">
-            {servicePoints.length === 0 ? (
-              <div className="qd-empty">กำลังโหลดช่องบริการ...</div>
-            ) : visibleSPs.length === 0 ? (
-              <div className="qd-empty">ไม่มีช่องบริการที่เปิดใช้งาน</div>
-            ) : (
-              visibleSPs.map(sp => {
-                const displayName = config.spDisplayNames[sp.id] || config.spDisplayNames[sp.name] || sp.name
-                const queueNo = spQueues[sp.name] || spQueues[sp.id] || ''
-                const badge = queueNo ? extractBadge(queueNo) : null
-                const rowKey = rowAnimKeys[sp.name] || rowAnimKeys[sp.id] || 0
-                return (
-                  <div key={sp.id} className="qd-row" style={{ borderBottom: border }}>
-                    {config.spColumnVisible && (
-                      <div
-                        className="qd-td qd-td-sp"
-                        style={{
-                          width: config.spColumnWidth,
-                          minWidth: config.spColumnWidth,
-                          background: config.spColumnBg,
-                          color: config.spColumnColor,
-                          fontSize: `${config.spFontSize}vw`,
-                          borderRight: border,
-                        }}
-                      >
-                        {displayName}
-                      </div>
-                    )}
-                    <div className="qd-td qd-td-queue" style={{ background: config.queueBg }}>
-                      {queueNo ? (
-                        <div key={rowKey} className={`qd-queue-cell ${animClass}`}>
-                          {badge && <span className="qd-badge">{badge}</span>}
-                          <span className="qd-queue-no" style={{ color: config.queueColor, fontSize: `${config.fontSize}vw` }}>
-                            {queueNo}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="qd-dash">—</span>
-                      )}
-                    </div>
-                  </div>
-                )
-              })
-            )}
-          </div>
-        </div>
+        {/* ── Columns ────────────────────────────────────────── */}
+        {columnGroups.map((sps, colIdx) => renderColumn(sps, colIdx))}
 
         {/* ── Right panel: เรียกแล้วไม่มา ──────────────────── */}
         {config.showNoShowPanel && <div
@@ -781,14 +876,30 @@ export default function QueueDisplayPage() {
                   className="qd-slider" />
               </SRow>
 
+              {/* ── Multi-column layout ── */}
+              <SSec>การจัดเรียงคอลัมน์</SSec>
+              <SRow label="จำนวนคอลัมน์">
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[1, 2, 3, 4].map(n => (
+                    <button key={n}
+                      className={`qd-col-count-btn${config.numColumns === n ? ' active' : ''}`}
+                      onClick={() => setConfig(c => ({ ...c, numColumns: n }))}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </SRow>
+
               {/* ── ช่องบริการ ── */}
-              <SSec>ช่องบริการ (เปิด/ปิด + ชื่อที่แสดง)</SSec>
-              {servicePoints.length === 0 ? (
+              <SSec>ช่องบริการ (เปิด/ปิด + ชื่อที่แสดง{config.numColumns > 1 ? ' + คอลัมน์ (ฟ้า) + แถว (เขียว)' : ''})</SSec>
+              {visibleSPs.length === 0 ? (
                 <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', padding: '4px 0' }}>ยังไม่มีช่องบริการ</div>
               ) : (
-                servicePoints.map(sp => {
+                visibleSPs.map(sp => {
                   const isVisible = !config.hiddenSPs.includes(sp.id) && !config.hiddenSPs.includes(sp.name)
                   const displayName = config.spDisplayNames[sp.id] || ''
+                  const colVal = config.spColumns[sp.id] ?? config.spColumns[sp.name] ?? 1
+                  const rowVal = config.spRows[sp.id] ?? config.spRows[sp.name] ?? 1
                   return (
                     <div key={sp.id} className="qd-sp-row">
                       <Tog checked={isVisible} onChange={() => toggleSPVisibility(sp)} />
@@ -799,6 +910,29 @@ export default function QueueDisplayPage() {
                         value={displayName}
                         onChange={e => setSpDisplayName(sp, e.target.value)}
                       />
+                      {config.numColumns > 1 && (
+                        <>
+                          <select
+                            className="input qd-sp-col-select"
+                            value={colVal}
+                            title="คอลัมน์"
+                            onChange={e => setConfig(c => ({ ...c, spColumns: { ...c.spColumns, [sp.id]: Number(e.target.value) } }))}
+                          >
+                            {Array.from({ length: config.numColumns }, (_, i) => (
+                              <option key={i + 1} value={i + 1}>คอล {i + 1}</option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            className="input qd-sp-row-input"
+                            min={1}
+                            max={99}
+                            value={rowVal}
+                            title="ลำดับแถว"
+                            onChange={e => setConfig(c => ({ ...c, spRows: { ...c.spRows, [sp.id]: Math.max(1, Number(e.target.value) || 1) } }))}
+                          />
+                        </>
+                      )}
                     </div>
                   )
                 })
@@ -877,6 +1011,18 @@ export default function QueueDisplayPage() {
               <SRow label="เปิดใช้เสียงประกาศ">
                 <Tog checked={config.ttsEnabled} onChange={v => setConfig(c => ({ ...c, ttsEnabled: v }))} />
               </SRow>
+
+              <SRow label="แสดง/อ่านชื่อคนไข้" hint="แสดงชื่อบนจอ + อ่านแทนเลขคิว">
+                <div style={{ opacity: config.ttsEnabled ? 1 : 0.4, pointerEvents: config.ttsEnabled ? 'auto' : 'none' }}>
+                  <Tog checked={config.ttsShowName} onChange={handleToggleShowName} />
+                </div>
+              </SRow>
+
+              {config.ttsShowName && (
+                <SRow label="ปิดนามสกุล (XXXX)" hint="แสดง XXXX แทน 4 ตัวท้ายนามสกุล">
+                  <Tog checked={config.maskLastName} onChange={v => setConfig(c => ({ ...c, maskLastName: v }))} />
+                </SRow>
+              )}
 
               {config.ttsEnabled && <>
                 <SRow label="แหล่งเสียง">
@@ -1037,14 +1183,45 @@ export default function QueueDisplayPage() {
           </div>
         </div>
       )}
+
+      {/* ─── Password Dialog: ยืนยันเปิดแสดงชื่อคนไข้ ─── */}
+      {showNamePwdDialog && (
+        <div className="qd-overlay" style={{ zIndex: 1000 }} onClick={() => setShowNamePwdDialog(false)}>
+          <div className="qd-pwd-modal" onClick={e => e.stopPropagation()}>
+            <div className="qd-pwd-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                <rect x="3" y="11" width="18" height="11" rx="2" stroke="#F57C00" strokeWidth="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="#F57C00" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            </div>
+            <h3 className="qd-pwd-title">ยืนยันการเปิดใช้งาน</h3>
+            <p className="qd-pwd-desc">กรอกรหัสผ่านเพื่อเปิดฟังก์ชันแสดงชื่อคนไข้</p>
+            <input
+              ref={namePwdRef}
+              className={`input qd-pwd-input${namePwdError ? ' error' : ''}`}
+              type="password"
+              placeholder="รหัสผ่าน"
+              value={namePwd}
+              onChange={e => { setNamePwd(e.target.value); setNamePwdError(false) }}
+              onKeyDown={e => { if (e.key === 'Enter') confirmNamePwd(); if (e.key === 'Escape') setShowNamePwdDialog(false) }}
+            />
+            {namePwdError && <p className="qd-pwd-error">รหัสผ่านไม่ถูกต้อง</p>}
+            <div className="qd-pwd-actions">
+              <button className="btn btn-ghost" onClick={() => setShowNamePwdDialog(false)}>ยกเลิก</button>
+              <button className="btn btn-primary" onClick={confirmNamePwd}>ยืนยัน</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
 
-function SRow({ label, children }: { label: string; children: React.ReactNode }) {
+function SRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="qd-setting-row">
-      <label>{label}</label>
+      <label>{label}{hint && <span style={{ fontSize: 11, color: '#90A4AE', fontWeight: 400, marginLeft: 5 }}>({hint})</span>}</label>
       {children}
     </div>
   )

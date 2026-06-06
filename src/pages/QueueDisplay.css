@@ -210,6 +210,45 @@
   line-height: 1;
   letter-spacing: -1px;
 }
+/* โหมดปกติ: ชื่อเล็กๆ ใต้เลขคิว (ไม่ใช้แล้ว แต่เก็บไว้) */
+.qd-patient-name {
+  font-weight: 600;
+  color: #37474F;
+  letter-spacing: 0.3px;
+  text-align: center;
+  opacity: 0.85;
+  margin-top: 4px;
+}
+/* โหมดแสดงชื่อ: เลขคิวเล็กบนสุด */
+.qd-queue-no-small {
+  font-weight: 700;
+  font-size: 2vw;
+  opacity: 0.55;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.qd-badge-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #333;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-weight: 700;
+  padding: 1px 5px;
+  margin-right: 2px;
+}
+/* ชื่อคนไข้หลัก (ใหญ่) */
+.qd-patient-name-main {
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: -0.5px;
+  text-align: center;
+  margin-top: 4px;
+}
 .qd-dash {
   font-size: 48px;
   color: #ccc;
@@ -351,18 +390,20 @@
 /* ─── Settings overlay ─────────────────────────────────────────── */
 .qd-overlay {
   position: fixed;
-  inset: 0;
+  top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(0,0,0,0.75);
   z-index: 900;
   display: flex;
   align-items: center;
   justify-content: center;
   backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   animation: fadeIn 0.2s ease-out;
 }
 .qd-panel {
   width: 560px;
-  max-height: 90vh;
+  max-width: calc(100vw - 16px);
+  max-height: 92vh;
   background: #1a2744;
   border: 1px solid rgba(255,255,255,0.15);
   border-radius: 16px;
@@ -404,12 +445,16 @@
 
 .qd-panel-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 16px 16px;
+  /* display:block — เสถียรกว่า flex column สำหรับ cross-browser */
 }
+/* spacing ระหว่าง element ทุกตัวใน panel body */
+.qd-panel-body > * { margin-bottom: 8px; }
+.qd-panel-body > .qd-section-label { margin-bottom: 4px; }
+
 .qd-section-label {
   font-size: 11px;
   font-weight: 700;
@@ -423,22 +468,27 @@
 .qd-setting-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  min-height: 32px;
 }
 .qd-setting-row > label:first-child {
   font-size: 13px;
   color: rgba(255,255,255,0.7);
-  width: 175px;
+  width: 160px;
+  min-width: 100px;
   flex-shrink: 0;
+  margin-right: 8px;
 }
 
 /* SP row in settings: [toggle] [sys-name] [name input] */
 .qd-sp-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 0;
+  flex-wrap: nowrap;
+  min-height: 38px;
+  padding: 2px 0;
 }
+.qd-sp-row > * + * { margin-left: 6px; }
 .qd-sp-sys-name {
   font-size: 13px;
   font-weight: 700;
@@ -451,16 +501,47 @@
   font-size: 13px !important;
   padding: 6px 10px !important;
 }
+.qd-sp-row-input {
+  width: 56px;
+  flex-shrink: 0;
+  font-size: 12px !important;
+  padding: 6px 8px !important;
+  background: #1a2a3a !important;
+  border-color: #66BB6A !important;
+  color: #66BB6A !important;
+  text-align: center;
+}
+.qd-sp-col-select {
+  width: 90px;
+  flex-shrink: 0;
+  font-size: 12px !important;
+  padding: 6px 8px !important;
+  background: #1a2a3a !important;
+  border-color: #00BCD4 !important;
+  color: #00BCD4 !important;
+}
+.qd-col-count-btn {
+  width: 38px; height: 34px;
+  border-radius: 7px;
+  border: 1.5px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.7);
+  font-size: 15px; font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.qd-col-count-btn:hover { border-color: #00BCD4; color: #00BCD4; }
+.qd-col-count-btn.active { background: rgba(0,188,212,0.2); border-color: #00BCD4; color: #00BCD4; }
 .qd-panel-ft {
   padding: 14px 20px;
   border-top: 1px solid rgba(255,255,255,0.1);
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
   flex-shrink: 0;
   flex-wrap: wrap;
 }
+.qd-panel-ft > * + * { margin-left: 8px; }
 .qd-btn-default {
   background: rgba(255,193,7,0.2);
   color: #ffd54f;
@@ -491,9 +572,10 @@
 .qd-dept-checks {
   display: flex;
   flex-direction: column;
-  gap: 6px;
   max-height: 180px;
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 4px 6px;
   background: rgba(255,255,255,0.05);
   border-radius: 8px;
@@ -504,7 +586,6 @@
 .qd-dept-check-item {
   display: flex;
   align-items: center;
-  gap: 8px;
   font-size: 12px;
   color: rgba(255,255,255,0.8);
   cursor: pointer;
@@ -512,29 +593,30 @@
   border-radius: 5px;
   transition: background 0.12s;
 }
+.qd-dept-check-item + .qd-dept-check-item { margin-top: 4px; }
 .qd-dept-check-item:hover { background: rgba(255,255,255,0.07); }
-.qd-dept-check-item input { accent-color: #00BCD4; cursor: pointer; flex-shrink: 0; }
+.qd-dept-check-item input { accent-color: #00BCD4; cursor: pointer; flex-shrink: 0; margin-right: 8px; }
 
 /* ─── TTS settings ──────────────────────────────────────── */
 .qd-tts-preview-wrap {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
   padding: 10px 12px;
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.12);
   border-radius: 10px;
   flex-wrap: wrap;
 }
+.qd-tts-preview-wrap > * + * { margin-left: 8px; }
 .qd-tts-template {
   display: flex;
   align-items: center;
-  gap: 4px;
   flex-wrap: wrap;
   font-size: 12px;
   flex: 1;
 }
+.qd-tts-template > * + * { margin-left: 4px; }
 .qd-tts-seg {
   padding: 3px 7px;
   border-radius: 5px;
@@ -600,9 +682,9 @@
 .color-row {
   display: flex;
   align-items: center;
-  gap: 8px;
   flex: 1;
 }
+.color-row > * + * { margin-left: 8px; }
 .color-row input[type="color"] {
   width: 40px;
   height: 38px;
@@ -635,15 +717,16 @@
 .qd-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
 
 /* Radio group */
-.qd-radio-group { display: flex; gap: 12px; flex-wrap: wrap; }
+.qd-radio-group { display: flex; flex-wrap: wrap; }
+.qd-radio-group > * + * { margin-left: 12px; }
 .qd-radio-label {
   display: flex;
   align-items: center;
-  gap: 5px;
   font-size: 13px;
   color: rgba(255,255,255,0.7);
   cursor: pointer;
 }
+.qd-radio-label input { margin-right: 5px; }
 .qd-radio-label input { accent-color: #00BCD4; }
 
 /* Toggle */
@@ -683,3 +766,45 @@
   70%  { transform: scale(0.95); }
   100% { transform: scale(1); }
 }
+
+/* ─── Password dialog ─────────────────────────────────────────── */
+.qd-pwd-modal {
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.22);
+  width: 100%; max-width: 360px;
+  padding: 28px 28px 24px;
+  display: flex; flex-direction: column; align-items: center;
+  animation: scaleIn 0.18s ease;
+}
+.qd-pwd-modal > * + * { margin-top: 10px; }
+.qd-pwd-icon {
+  width: 58px; height: 58px; border-radius: 50%;
+  background: rgba(245,124,0,0.10);
+  border: 2px solid rgba(245,124,0,0.25);
+  display: flex; align-items: center; justify-content: center;
+}
+.qd-pwd-title {
+  font-size: 17px; font-weight: 800; color: #0D47A1; margin: 0;
+}
+.qd-pwd-desc {
+  font-size: 13px; color: #78909C; text-align: center; margin: 0;
+}
+.qd-pwd-input {
+  width: 100%; text-align: center;
+  font-size: 18px; letter-spacing: 4px;
+  border-radius: 10px !important;
+}
+.qd-pwd-input.error {
+  border-color: #E53935 !important;
+  box-shadow: 0 0 0 3px rgba(229,57,53,0.15) !important;
+}
+.qd-pwd-error {
+  font-size: 13px; color: #E53935; font-weight: 600; margin: 0;
+}
+.qd-pwd-actions {
+  display: flex; width: 100%; margin-top: 6px;
+}
+.qd-pwd-actions > * + * { margin-left: 10px; }
+.qd-pwd-actions .btn { flex: 1; padding: 12px; font-size: 14px; }
+

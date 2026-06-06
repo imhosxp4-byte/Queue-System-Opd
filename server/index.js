@@ -274,7 +274,10 @@ const SP_FILE = path.join(DATA_DIR, 'service-points.json')
 
 function loadServicePoints() {
   try {
-    if (fs.existsSync(SP_FILE)) return JSON.parse(fs.readFileSync(SP_FILE, 'utf-8'))
+    if (fs.existsSync(SP_FILE)) {
+      const data = JSON.parse(fs.readFileSync(SP_FILE, 'utf-8'))
+      if (Array.isArray(data) && data.length > 0) return data
+    }
   } catch {}
   return ['1','2','3','4','5','6'].map(n => ({ id: n, name: `ช่อง ${n}` }))
 }
@@ -307,7 +310,7 @@ SELECT ov.vstdate, ov.vsttime,
     ov.oqueue AS queue_no,
     ov.vn,
     ov.hn,
-    CONCAT(pt.pname, pt.fname, ' ', pt.lname) AS queue_name,
+    CONCAT(pt.fname, ' ', pt.lname) AS queue_name,
     p.name AS insurance,
     k.department,
     CASE
@@ -330,7 +333,7 @@ SELECT ov.vstdate, ov.vsttime,
     ov.oqueue AS queue_no,
     ov.vn,
     ov.hn,
-    CONCAT(pt.pname, pt.fname, ' ', pt.lname) AS queue_name,
+    CONCAT(pt.fname, ' ', pt.lname) AS queue_name,
     p.name AS insurance,
     k.department,
     CASE
@@ -355,7 +358,7 @@ SELECT ov.vstdate, ov.vsttime,
     ov.oqueue AS queue_no,
     ov.vn,
     ov.hn,
-    CONCAT(pt.pname, pt.fname, ' ', pt.lname) AS queue_name,
+    CONCAT(pt.fname, ' ', pt.lname) AS queue_name,
     p.name AS insurance,
     k.department,
     CASE
@@ -378,7 +381,7 @@ SELECT ov.vstdate, ov.vsttime,
     ov.oqueue AS queue_no,
     ov.vn,
     ov.hn,
-    CONCAT(pt.pname, pt.fname, ' ', pt.lname) AS queue_name,
+    CONCAT(pt.fname, ' ', pt.lname) AS queue_name,
     p.name AS insurance,
     k.department,
     CASE
@@ -401,7 +404,7 @@ SELECT ov.vstdate, ov.vsttime,
     ov.oqueue AS queue_no,
     ov.vn,
     ov.hn,
-    CONCAT(pt.pname, pt.fname, ' ', pt.lname) AS queue_name,
+    CONCAT(pt.fname, ' ', pt.lname) AS queue_name,
     p.name AS insurance,
     k.department,
     CASE
@@ -420,7 +423,7 @@ SELECT ov.vstdate, ov.vsttime,
     ov.oqueue AS queue_no,
     ov.vn,
     ov.hn,
-    CONCAT(pt.pname, pt.fname, ' ', pt.lname) AS queue_name,
+    CONCAT(pt.fname, ' ', pt.lname) AS queue_name,
     p.name AS insurance,
     k.department,
     CASE
@@ -441,7 +444,7 @@ SELECT ov.vstdate, ov.vsttime,
     ov.oqueue AS queue_no,
     ov.vn,
     ov.hn,
-    CONCAT(pt.pname, pt.fname, ' ', pt.lname) AS queue_name,
+    CONCAT(pt.fname, ' ', pt.lname) AS queue_name,
     p.name AS insurance,
     k.department,
     CASE
@@ -460,7 +463,7 @@ SELECT ov.vstdate, ov.vsttime,
     ov.oqueue AS queue_no,
     ov.vn,
     ov.hn,
-    CONCAT(pt.pname, pt.fname, ' ', pt.lname) AS queue_name,
+    CONCAT(pt.fname, ' ', pt.lname) AS queue_name,
     p.name AS insurance,
     k.department,
     CASE
@@ -548,17 +551,21 @@ app.post('/api/queue/call', async (req, res) => {
 
     const displayNo = found.queue_slot || (found.queue_no != null ? String(found.queue_no) : '')
     const calls = getTodayCalls()
+    const department = found.department || ''
     calls[found.vn] = {
       status: 'calling',
       servicePoint: String(servicePoint),
       calledAt: new Date().toLocaleTimeString('th-TH'),
       queueNo: displayNo,
-      mode: qMode
+      mode: qMode,
+      department
     }
     saveTodayCalls(calls)
 
+    const queueName = found.queue_name || ''
+
     // Respond and broadcast queue number immediately — don't wait for TTS
-    broadcast({ type: 'queue:called', data: { queueNo: displayNo, servicePoint: String(servicePoint), audioUrl: null, displayConfigId: displayConfigId || null } })
+    broadcast({ type: 'queue:called', data: { queueNo: displayNo, servicePoint: String(servicePoint), audioUrl: null, displayConfigId: displayConfigId || null, queueName, department } })
     res.json({ success: true, queueNo: displayNo, queueSlot: found.queue_slot })
 
     // Generate TTS async in background, broadcast audio when ready
@@ -568,11 +575,14 @@ app.post('/api/queue/call', async (req, res) => {
         ? JSON.parse(fs.readFileSync(qdFile, 'utf-8'))
         : (fs.existsSync(QD_DEFAULT_FILE) ? JSON.parse(fs.readFileSync(QD_DEFAULT_FILE, 'utf-8')) : null)
       if (qdCfg && qdCfg.ttsEnabled && qdCfg.ttsSource === 'server') {
-        const text = [qdCfg.ttsPrefix1, displayNo, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix]
-          .filter(Boolean).join(' ')
+        // เมื่อเปิดประกาศชื่อ: อ่านชื่อเต็ม (fname + lname) ตามที่ตั้งค่าในจอแสดงผล
+        const ttsName = queueName || ''
+        const text = (qdCfg.ttsShowName === true) && ttsName
+          ? [qdCfg.ttsPrefix1, ttsName, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
+          : [qdCfg.ttsPrefix1, displayNo, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
         const voiceName = qdCfg.ttsServerVoiceName || qdCfg.ttsVoiceName || ''
         generateServerTTS(text, voiceName, qdCfg.ttsRate ?? 1).then(audioUrl => {
-          broadcast({ type: 'queue:audio', data: { audioUrl, displayConfigId: displayConfigId || null } })
+          broadcast({ type: 'queue:audio', data: { audioUrl, displayConfigId: displayConfigId || null, department } })
         }).catch(err => console.error('[TTS async]', err.message))
       }
     } catch (ttsErr) {
@@ -614,6 +624,14 @@ app.post('/api/queue/status', (req, res) => {
 
 app.post('/api/display/config', (req, res) => {
   broadcast({ type: 'display:config', data: req.body })
+  res.json({ success: true })
+})
+
+// ─── API: Clear display queues ────────────────────────────────────────────────
+
+app.post('/api/display/clear', (req, res) => {
+  const { displayConfigId } = req.body
+  broadcast({ type: 'queue:clear', data: { displayConfigId: displayConfigId || null } })
   res.json({ success: true })
 })
 
@@ -747,6 +765,37 @@ app.delete('/api/service-points/:id', (req, res) => {
   const data = loadServicePoints().filter(sp => sp.id !== req.params.id)
   saveServicePoints(data)
   res.json({ success: true })
+})
+
+// ─── Shortcut: download .url file ────────────────────────────────────────────
+app.get('/api/shortcut/download', (req, res) => {
+  try {
+    const { name, url } = req.query
+    if (!name || !url) return res.status(400).send('name and url required')
+    const filename = `${name}.url`
+    const content = `[InternetShortcut]\r\nURL=${url}\r\n`
+    res.setHeader('Content-Type', 'application/octet-stream')
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`)
+    res.send(content)
+  } catch (e) {
+    res.status(500).send(e.message)
+  }
+})
+
+// ─── Shortcut: บันทึก .url ลง Desktop ของ HOST ──────────────────────────────
+app.post('/api/shortcut/desktop', (req, res) => {
+  try {
+    const { name, url } = req.body
+    if (!name || !url) return res.json({ success: false, message: 'name and url required' })
+    const os = require('os')
+    const desktop = path.join(os.homedir(), 'Desktop')
+    const filename = `${name}.url`
+    const content = `[InternetShortcut]\r\nURL=${url}\r\n`
+    fs.writeFileSync(path.join(desktop, filename), content, 'utf-8')
+    res.json({ success: true, filename })
+  } catch (e) {
+    res.json({ success: false, message: e.message })
+  }
 })
 
 // ─── Server IP ───────────────────────────────────────────────────────────────

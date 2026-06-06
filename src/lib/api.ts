@@ -22,6 +22,7 @@ const _wsListeners: Set<(data: { queueNo: string; servicePoint: string; audioUrl
 const _configListeners: Set<(config: unknown) => void> = new Set()
 const _statusListeners: Set<(data: { vn: string; status: string; queueNo?: string; servicePoint?: string }) => void> = new Set()
 const _audioListeners: Set<(data: { audioUrl: string; displayConfigId?: string | null }) => void> = new Set()
+const _clearListeners: Set<(data: { displayConfigId: string | null }) => void> = new Set()
 
 function getWS(): WebSocket {
   if (_ws && _ws.readyState === WebSocket.OPEN) return _ws
@@ -38,6 +39,8 @@ function getWS(): WebSocket {
         _configListeners.forEach(cb => cb(msg.data))
       } else if (msg.type === 'queue:status') {
         _statusListeners.forEach(cb => cb(msg.data))
+      } else if (msg.type === 'queue:clear') {
+        _clearListeners.forEach(cb => cb(msg.data))
       }
     } catch {}
   }
@@ -102,6 +105,7 @@ export interface CallEntry {
   servicePoint: string
   calledAt: string
   queueNo: string
+  department?: string
 }
 
 export async function getCallsToday(mode?: string): Promise<CallEntry[]> {
@@ -143,7 +147,7 @@ export async function getTTSVoices(): Promise<string[]> {
 }
 
 export function onQueueCalled(
-  cb: (data: { queueNo: string; servicePoint: string; audioUrl?: string | null; displayConfigId?: string | null }) => void
+  cb: (data: { queueNo: string; servicePoint: string; audioUrl?: string | null; displayConfigId?: string | null; department?: string }) => void
 ): () => void {
   if (isElectron()) return window.electronAPI.onQueueCalled(cb)
   if (typeof window !== 'undefined') getWS()
@@ -204,6 +208,18 @@ export function onQueueAudio(
   if (typeof window !== 'undefined') getWS()
   _audioListeners.add(cb)
   return () => _audioListeners.delete(cb)
+}
+
+export async function clearDisplayQueues(displayConfigId?: string): Promise<{ success: boolean }> {
+  return fetchJSON('/display/clear', { method: 'POST', body: JSON.stringify({ displayConfigId: displayConfigId || null }) })
+}
+
+export function onQueueClear(
+  cb: (data: { displayConfigId: string | null }) => void
+): () => void {
+  if (typeof window !== 'undefined') getWS()
+  _clearListeners.add(cb)
+  return () => _clearListeners.delete(cb)
 }
 
 export function onQueueStatusChanged(
