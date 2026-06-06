@@ -226,6 +226,7 @@ export default function QueueDisplayPage() {
   const [ttsVoices, setTtsVoices] = useState<SpeechSynthesisVoice[]>([])
   const [serverTtsVoices, setServerTtsVoices] = useState<string[]>([])
   const [loadingVoices, setLoadingVoices] = useState(false)
+  const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'ok' | 'err'>('idle')
   const resizeStartX = useRef(0)
   const resizeStartW = useRef(0)
 
@@ -419,15 +420,33 @@ export default function QueueDisplayPage() {
     return off
   }, [])
 
+  // Play audio URL via AudioContext (avoids browser autoplay block)
+  const playAudioUrl = async (url: string, volume: number) => {
+    try {
+      if (!audioCtx.current) audioCtx.current = new AudioContext()
+      if (audioCtx.current.state === 'suspended') await audioCtx.current.resume()
+      const resp = await fetch(url)
+      const buf = await resp.arrayBuffer()
+      const decoded = await audioCtx.current.decodeAudioData(buf)
+      const src = audioCtx.current.createBufferSource()
+      const gain = audioCtx.current.createGain()
+      gain.gain.value = volume
+      src.buffer = decoded
+      src.connect(gain)
+      gain.connect(audioCtx.current.destination)
+      src.start()
+    } catch (e) {
+      console.error('[playAudioUrl]', e)
+    }
+  }
+
   // WebSocket: async TTS audio ready — play when received
   useEffect(() => {
     const off = onQueueAudio(data => {
       const cfg = configRef.current
       if (cfg.displayConfigId && data.displayConfigId && data.displayConfigId !== cfg.displayConfigId) return
       if (cfg.filterDepts.length > 0 && (data as any).department && !cfg.filterDepts.includes((data as any).department)) return
-      const audio = new Audio(data.audioUrl)
-      audio.volume = cfg.ttsVolume ?? 1
-      audio.play().catch(() => {})
+      playAudioUrl(data.audioUrl, cfg.ttsVolume ?? 1)
     })
     return off
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -513,13 +532,20 @@ export default function QueueDisplayPage() {
 
   const previewTTS = async () => {
     if (config.ttsSource === 'server') {
-      const text = [config.ttsPrefix1, 'A001', config.ttsMiddle, '1', config.ttsSuffix].filter(Boolean).join(' ')
-      const audioUrl = await previewServerTTS(text, config.ttsServerVoiceName, config.ttsRate ?? 1)
-      if (audioUrl) {
-        const audio = new Audio(audioUrl)
-        audio.volume = config.ttsVolume ?? 1
-        audio.play().catch(() => {})
+      setPreviewState('loading')
+      try {
+        const text = [config.ttsPrefix1, 'A001', config.ttsMiddle, '1', config.ttsSuffix].filter(Boolean).join(' ')
+        const audioUrl = await previewServerTTS(text, config.ttsServerVoiceName, config.ttsRate ?? 1)
+        if (audioUrl) {
+          await playAudioUrl(audioUrl, config.ttsVolume ?? 1)
+          setPreviewState('ok')
+        } else {
+          setPreviewState('err')
+        }
+      } catch {
+        setPreviewState('err')
       }
+      setTimeout(() => setPreviewState('idle'), 3000)
     } else {
       playTTS('A001', '1', config)
     }
@@ -1065,7 +1091,11 @@ export default function QueueDisplayPage() {
                     <span className="qd-tts-seg var">1</span>
                     <span className="qd-tts-seg edit">{config.ttsSuffix || '…'}</span>
                   </div>
-                  <button className="qd-tts-play-btn" onClick={previewTTS}>▶ ทดสอบเสียง</button>
+                  <button className="qd-tts-play-btn" onClick={previewTTS}
+                    disabled={previewState === 'loading'}
+                    style={previewState === 'ok' ? { background: '#16a34a' } : previewState === 'err' ? { background: '#dc2626' } : {}}>
+                    {previewState === 'loading' ? '⟳ กำลังสร้าง…' : previewState === 'ok' ? '✓ สำเร็จ' : previewState === 'err' ? '✗ ไม่สำเร็จ' : '▶ ทดสอบเสียง'}
+                  </button>
                 </div>
 
                 <SRow label="ข้อความก่อนเลขคิว">
