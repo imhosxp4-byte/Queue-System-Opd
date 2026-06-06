@@ -3,7 +3,7 @@ import {
   onDisplayConfig, onQueueCalled, onQueueStatusChanged, onQueueAudio, onQueueClear, updateDisplayConfig,
   getSystemFonts, getServicePoints, getCallsToday, getQueueList,
   getQDDefaultConfig, saveQDDefaultConfig, getTTSVoices, getDisplayConfigById,
-  getDisplayQDConfig, saveDisplayQDConfig,
+  getDisplayQDConfig, saveDisplayQDConfig, previewServerTTS,
   type CallEntry
 } from '../lib/api'
 import './QueueDisplay.css'
@@ -511,7 +511,19 @@ export default function QueueDisplayPage() {
     window.speechSynthesis.speak(utt)
   }
 
-  const previewTTS = () => playTTS('A001', '1', config)
+  const previewTTS = async () => {
+    if (config.ttsSource === 'server') {
+      const text = [config.ttsPrefix1, 'A001', config.ttsMiddle, '1', config.ttsSuffix].filter(Boolean).join(' ')
+      const audioUrl = await previewServerTTS(text, config.ttsServerVoiceName, config.ttsRate ?? 1)
+      if (audioUrl) {
+        const audio = new Audio(audioUrl)
+        audio.volume = config.ttsVolume ?? 1
+        audio.play().catch(() => {})
+      }
+    } else {
+      playTTS('A001', '1', config)
+    }
+  }
 
   const openSettings = () => {
     setShowSettings(true)

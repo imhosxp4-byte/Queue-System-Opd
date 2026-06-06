@@ -45,66 +45,78 @@ const DEFAULT_DISPLAY_CONFIGS = [
 
 const DEFAULT_QD_CONFIG = {
   "title": "ระบบคิวผู้ป่วยนอก",
-  "headerBg": "#1a237e",
-  "headerTextColor": "#ffffff",
+  "headerBg": "#061332",
+  "headerTextColor": "#faf9f9",
   "showClock": true,
-  "clockColor": "#ffd54f",
+  "clockColor": "#fb1909",
   "soundEnabled": true,
   "colSpHeader": "ช่องบริการ",
   "colQueueHeader": "หมายเลขที่เรียกเข้าบริการ",
-  "tableHeaderBg": "#2e7d32",
+  "tableHeaderBg": "#2f90c1",
   "tableHeaderColor": "#ffffff",
   "spColumnBg": "#f8f9fa",
-  "spColumnColor": "#1a1a2e",
+  "spColumnColor": "#0f0f48",
+  "spHeaderBg": "#1b92c5",
+  "spHeaderColor": "#ffffff",
+  "showNoShowPanel": true,
+  "noShowItemHeight": 120,
   "queueBg": "#ffffff",
-  "queueColor": "#1565c0",
+  "queueColor": "#102565",
   "spDisplayNames": {},
-  "spFontSize": 6,
-  "spColumnWidth": 220,
+  "spFontSize": 14,
+  "spColumnWidth": 300,
   "spColumnVisible": true,
-  "borderColor": "#bbbbbb",
+  "borderColor": "#07c3e9",
   "borderWidth": 2,
-  "footerHeight": 46,
+  "footerHeight": 62,
   "rightPanelBg": "#1a0000",
   "rightPanelHeaderBg": "#7f0000",
   "rightPanelHeaderColor": "#ffffff",
   "rightPanelLabel": "เรียกแล้วไม่มา",
   "rightPanelQueueColor": "#ff6b6b",
-  "rightPanelWidth": 260,
-  "rightPanelFontSize": 8,
-  "rightPanelMaxItems": 10,
-  "font": "Sarabun",
-  "fontSize": 8,
+  "rightPanelWidth": 310,
+  "rightPanelFontSize": 5.5,
+  "rightPanelMaxItems": 12,
+  "font": "Arial",
+  "fontSize": 14.5,
   "animationType": "scale",
   "showFooter": true,
-  "marqueeText": "ยินดีต้อนรับสู่ระบบคิว | Welcome to Queue System | กรุณานั่งรอเรียกหมายเลขคิว",
-  "footerBg": "#1565c0",
+  "marqueeText": "ยินดีต้อนรับ  กรุณานั่งรอเรียกหมายเลขคิว",
+  "footerBg": "#1596c1",
   "footerTextColor": "#ffffff",
-  "footerFontSize": 20,
-  "footerScrollSpeed": 30,
+  "footerFontSize": 31,
+  "footerScrollSpeed": 60,
   "hiddenSPs": [],
   "displayStation": "",
   "filterDepts": [],
-  "displayConfigId": "1779942389874",
-  "displayConfigName": "ซักประวัติอายุกรรม",
-  "displayChannels": ["1", "2", "3"],
+  "numColumns": 1,
+  "spColumns": {},
+  "spRows": {},
+  "displayConfigId": "1780456207756",
+  "displayConfigName": "ซักประวัติตรวจโรคทั่วไป",
+  "displayChannels": ["1", "2"],
   "ttsEnabled": true,
   "ttsSource": "server",
-  "ttsPrefix1": "ขอเชิญลำดับ",
-  "ttsMiddle": "ที่โต๊ะซักประวัติหมายเลข",
+  "ttsPrefix1": "ขอเชิญคิว",
+  "ttsMiddle": "ที่ช่องบริการ",
   "ttsSuffix": "ค่ะ",
   "ttsVoiceName": "Microsoft เปรมวดี Online (Natural) - Thai (Thailand)",
   "ttsServerVoiceName": "th-TH-PremwadeeNeural",
-  "ttsRate": 0.6,
+  "ttsRate": 0.7,
   "ttsPitch": 0.9,
-  "ttsVolume": 0.8
+  "ttsVolume": 0.8,
+  "ttsShowName": false,
+  "maskLastName": false
 }
 
 const QD_DEFAULT_FILE_SEED = path.join(DATA_DIR, 'qd-default-config.json')
+const QD_DISPLAY_CONFIG_SEED = path.join(DATA_DIR, 'qd-config-1780456207756.json')
 if (!fs.existsSync(DISPLAY_CONFIGS_FILE))
   fs.writeFileSync(DISPLAY_CONFIGS_FILE, JSON.stringify(DEFAULT_DISPLAY_CONFIGS, null, 2), 'utf-8')
 if (!fs.existsSync(QD_DEFAULT_FILE_SEED))
   fs.writeFileSync(QD_DEFAULT_FILE_SEED, JSON.stringify(DEFAULT_QD_CONFIG, null, 2), 'utf-8')
+if (!fs.existsSync(QD_DISPLAY_CONFIG_SEED))
+  fs.writeFileSync(QD_DISPLAY_CONFIG_SEED, JSON.stringify(DEFAULT_QD_CONFIG, null, 2), 'utf-8')
 
 // ─── Settings helpers ─────────────────────────────────────────────────────────
 
@@ -268,6 +280,17 @@ async function generateServerTTS(text, voiceName, rate) {
   }
   return generateSAPITTS(text, voiceName, rate)
 }
+
+// Preview TTS — generate audio and return URL for immediate playback
+app.post('/api/tts/preview', async (req, res) => {
+  try {
+    const { text = 'ทดสอบเสียง ขอเชิญลำดับ A001 ที่ช่อง 1 ค่ะ', voiceName = '', rate = 1 } = req.body || {}
+    const audioUrl = await generateServerTTS(text, voiceName, rate)
+    res.json({ success: true, audioUrl })
+  } catch (e) {
+    res.json({ success: false, message: e.message })
+  }
+})
 
 // Return combined voice list: Edge Neural + SAPI
 app.get('/api/tts/voices', (req, res) => {

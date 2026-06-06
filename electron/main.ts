@@ -1,52 +1,27 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, Tray, Menu, nativeImage, shell } from 'electron'
 import { join } from 'path'
 import type { Server } from 'http'
 
 const PORT = process.env.PORT || 3200
-
-let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
 let httpServer: Server | null = null
 
-function createWindow(): void {
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-    title: 'Queue System OPD',
-    show: false
-  })
-
-  mainWindow.loadURL(`http://localhost:${PORT}`)
-
-  // Open external links in browser instead of Electron window
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (!url.startsWith(`http://localhost:${PORT}`)) {
-      shell.openExternal(url)
-      return { action: 'deny' }
-    }
-    return { action: 'allow' }
-  })
-
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show()
-  })
-
-  mainWindow.on('closed', () => {
-    mainWindow = null
-  })
+// Single instance — second launch just opens browser
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
 }
 
+app.on('second-instance', () => {
+  shell.openExternal(`http://localhost:${PORT}`)
+})
+
 app.whenReady().then(() => {
-  // Writable data directory — userData survives reinstalls unless explicitly cleared
+  app.setAppUserModelId('Queue System OPD')
+
+  // Writable data dir (survives reinstall)
   process.env.QUEUE_DATA_DIR = app.getPath('userData')
 
   if (app.isPackaged) {
-    // Renderer is unpacked from asar so Express can serve it as real filesystem files
     process.env.RENDERER_DIR = join(
       process.resourcesPath,
       'app.asar.unpacked',
@@ -64,17 +39,37 @@ app.whenReady().then(() => {
   httpServer = startServer()
 
   httpServer.once('listening', () => {
-    createWindow()
+    shell.openExternal(`http://localhost:${PORT}`)
   })
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
+  // System tray
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.ico')
+    : join(__dirname, '../../build/icon.ico')
+
+  const icon = nativeImage.createFromPath(iconPath)
+  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
+  tray.setToolTip('Queue System OPD — กำลังทำงาน')
+
+  const menu = Menu.buildFromTemplate([
+    {
+      label: 'เปิด Queue System OPD',
+      click: () => shell.openExternal(`http://localhost:${PORT}`)
+    },
+    { type: 'separator' },
+    {
+      label: 'ออกจากโปรแกรม',
+      click: () => {
+        httpServer?.close()
+        tray?.destroy()
+        app.quit()
+      }
+    }
+  ])
+
+  tray.setContextMenu(menu)
+  tray.on('click', () => shell.openExternal(`http://localhost:${PORT}`))
 })
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    httpServer?.close()
-    app.quit()
-  }
-})
+// Keep running when all browser windows close
+app.on('window-all-closed', () => { /* stay in tray */ })

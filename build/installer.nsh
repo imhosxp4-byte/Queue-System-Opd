@@ -1,10 +1,20 @@
-; Custom NSIS installer script — bundles ALL TTS voices from source machine
-; electron-builder calls !insertmacro customInstall / customUninstall
+; Custom NSIS installer — fully offline, bundles all TTS voices
 
 !macro customInstall
 
   ; ════════════════════════════════════════════════════════════════
-  ; 1. Microsoft Pattara — Thai (Thailand) OneCore
+  ; 0. Uninstall previous version silently if found
+  ; ════════════════════════════════════════════════════════════════
+  ReadRegStr $9 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Queue-System-Opd" "UninstallString"
+  StrCmp $9 "" skip_uninstall
+    ; Kill running process first
+    ExecWait 'taskkill /F /IM "Queue-System-Opd.exe" /T' $0
+    ; Run uninstaller silently, keep $INSTDIR so we install there
+    ExecWait '"$9" /S _?=$INSTDIR'
+  skip_uninstall:
+
+  ; ════════════════════════════════════════════════════════════════
+  ; 1. Microsoft Pattara — Thai (Thailand) OneCore [OFFLINE]
   ; ════════════════════════════════════════════════════════════════
   ReadRegStr $0 HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_thTH_Pattara" ""
   StrCmp $0 "" 0 skip_pattara
@@ -51,7 +61,7 @@
   skip_pattara:
 
   ; ════════════════════════════════════════════════════════════════
-  ; 2. en-US OneCore voices — David, Mark, Zira
+  ; 2. en-US OneCore voices — David, Mark, Zira [OFFLINE]
   ; ════════════════════════════════════════════════════════════════
   ReadRegStr $1 HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_David" ""
   StrCmp $1 "" 0 skip_enUS_onecore
@@ -93,7 +103,6 @@
 
     SetOverwrite on
 
-    ; Register OneCore David
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_David" "" "Microsoft David - English (United States)"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_David" "409" "Microsoft David - English (United States)"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_David" "CLSID" "{179F3D56-1B0B-42B2-A962-59B7EF59FE1B}"
@@ -106,7 +115,6 @@
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_David\Attributes" "Vendor" "Microsoft"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_David\Attributes" "Version" "11.0"
 
-    ; Register OneCore Mark
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_Mark" "" "Microsoft Mark - English (United States)"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_Mark" "409" "Microsoft Mark - English (United States)"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_Mark" "CLSID" "{179F3D56-1B0B-42B2-A962-59B7EF59FE1B}"
@@ -119,7 +127,6 @@
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_Mark\Attributes" "Vendor" "Microsoft"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_Mark\Attributes" "Version" "11.0"
 
-    ; Register OneCore Zira
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_Zira" "" "Microsoft Zira - English (United States)"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_Zira" "409" "Microsoft Zira - English (United States)"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_enUS_Zira" "CLSID" "{179F3D56-1B0B-42B2-A962-59B7EF59FE1B}"
@@ -135,7 +142,7 @@
   skip_enUS_onecore:
 
   ; ════════════════════════════════════════════════════════════════
-  ; 3. en-US SAPI5 Desktop — Microsoft Zira Desktop
+  ; 3. en-US SAPI5 Desktop — Microsoft Zira Desktop [OFFLINE]
   ; ════════════════════════════════════════════════════════════════
   ReadRegStr $2 HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\TTS_MS_EN-US_ZIRA_11.0" ""
   StrCmp $2 "" 0 skip_zira_desktop
@@ -159,8 +166,6 @@
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\TTS_MS_EN-US_ZIRA_11.0\Attributes" "Name" "Microsoft Zira Desktop"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\TTS_MS_EN-US_ZIRA_11.0\Attributes" "Vendor" "Microsoft"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\TTS_MS_EN-US_ZIRA_11.0\Attributes" "Version" "11.0"
-
-    ; Also register in 32-bit view
     WriteRegStr HKLM "SOFTWARE\WOW6432Node\Microsoft\Speech\Voices\Tokens\TTS_MS_EN-US_ZIRA_11.0" "" "Microsoft Zira Desktop - English (United States)"
     WriteRegStr HKLM "SOFTWARE\WOW6432Node\Microsoft\Speech\Voices\Tokens\TTS_MS_EN-US_ZIRA_11.0" "409" "Microsoft Zira Desktop - English (United States)"
     WriteRegStr HKLM "SOFTWARE\WOW6432Node\Microsoft\Speech\Voices\Tokens\TTS_MS_EN-US_ZIRA_11.0" "CLSID" "{0EF96F0B-F0D4-4B42-9A8B-F14E6A4C62CD}"
@@ -175,16 +180,8 @@
 
   skip_zira_desktop:
 
-  ; ════════════════════════════════════════════════════════════════
-  ; 4. Microsoft เปรมวดี — Thai Natural TTS Voice (Windows 11)
-  ;    ดาวน์โหลดจาก Windows Update — ต้องการ internet ตอนติดตั้ง
-  ; ════════════════════════════════════════════════════════════════
-  DetailPrint "กำลังติดตั้ง Microsoft เปรมวดี Thai Natural Voice..."
-  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command "Add-WindowsCapability -Online -Name \"Language.TextToSpeech~~~th-TH~0.0.1.0\" -ErrorAction SilentlyContinue"'
-  DetailPrint "Microsoft เปรมวดี Thai Natural Voice เสร็จแล้ว"
-
 !macroend
 
 !macro customUninstall
-  ; เก็บ voices ไว้ ไม่ลบออกเมื่อ uninstall เพราะ system อาจใช้กับโปรแกรมอื่น
+  ; Keep voices — system may use them with other programs
 !macroend
