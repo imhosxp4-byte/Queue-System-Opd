@@ -156,6 +156,7 @@ export async function previewServerTTS(text: string, voiceName: string, rate: nu
     return { url: null, error: r.message || 'server error' }
   } catch (e: unknown) {
     return { url: null, error: e instanceof Error ? e.message : 'unknown error' }
+  }
 }
 
 export function onQueueCalled(

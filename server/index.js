@@ -1,6 +1,11 @@
 // Queue OPD — Express + WebSocket server (Browser mode)
 'use strict'
 
+// Polyfill for Node.js < 19: msedge-tts requires globalThis.crypto (Web Crypto API)
+if (typeof globalThis.crypto === 'undefined') {
+  globalThis.crypto = require('crypto').webcrypto
+}
+
 const http = require('http')
 const path = require('path')
 const fs = require('fs')
