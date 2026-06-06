@@ -25,10 +25,12 @@ const _audioListeners: Set<(data: { audioUrl: string; displayConfigId?: string |
 const _clearListeners: Set<(data: { displayConfigId: string | null }) => void> = new Set()
 
 function getWS(): WebSocket {
-  if (_ws && _ws.readyState === WebSocket.OPEN) return _ws
+  // Reuse if already open OR still connecting — prevents duplicate connections
+  if (_ws && (_ws.readyState === WebSocket.OPEN || _ws.readyState === WebSocket.CONNECTING)) return _ws
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  _ws = new WebSocket(`${protocol}//${location.host}`)
-  _ws.onmessage = (e) => {
+  const ws = new WebSocket(`${protocol}//${location.host}`)
+  _ws = ws
+  ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data)
       if (msg.type === 'queue:called') {
@@ -44,8 +46,9 @@ function getWS(): WebSocket {
       }
     } catch {}
   }
-  _ws.onclose = () => { _ws = null }
-  return _ws
+  // Only clear _ws if this specific instance closes (prevents orphaned WS from clearing it)
+  ws.onclose = () => { if (_ws === ws) _ws = null }
+  return ws
 }
 
 // ─── Settings ────────────────────────────────────────────────────────────────
