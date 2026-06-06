@@ -1,22 +1,29 @@
 #!/usr/bin/env node
-// Launcher script that clears ELECTRON_RUN_AS_NODE before starting Electron
-const { spawn } = require('child_process')
+const { spawn, exec } = require('child_process')
 const path = require('path')
 
-const electronBin = path.join(__dirname, 'node_modules', 'electron', 'dist', 'electron.exe')
+const PORT = process.env.PORT || 3200
+const URL = `http://localhost:${PORT}`
 
-const env = { ...process.env }
-delete env['ELECTRON_RUN_AS_NODE']
-delete env['ELECTRON_RUN_AS_NODE'.toLowerCase()]
-
-const child = spawn(electronBin, ['.'], {
+const server = spawn(process.execPath, [path.join(__dirname, 'server', 'index.js')], {
   stdio: 'inherit',
-  env,
-  cwd: __dirname
+  cwd: __dirname,
+  env: { ...process.env },
 })
 
-child.on('close', (code) => process.exit(code || 0))
-child.on('error', (err) => {
-  console.error('Failed to start Electron:', err.message)
+server.on('error', (err) => {
+  console.error('Failed to start server:', err.message)
   process.exit(1)
 })
+
+server.on('close', (code) => process.exit(code || 0))
+
+// Wait briefly then open browser
+setTimeout(() => {
+  const cmd = process.platform === 'win32'
+    ? `start "" "${URL}"`
+    : process.platform === 'darwin'
+      ? `open "${URL}"`
+      : `xdg-open "${URL}"`
+  exec(cmd)
+}, 1500)

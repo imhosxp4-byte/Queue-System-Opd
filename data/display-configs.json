@@ -1,27 +1,5 @@
 [
   {
-    "id": "1779942389874",
-    "name": "ซักประวัติอายุกรรม",
-    "bgColor": "#0A1929",
-    "textColor": "#FFFFFF",
-    "queueColor": "#00BCD4",
-    "font": "Sarabun",
-    "fontSize": 150,
-    "title": "ระบบคิวผู้ป่วยนอก อายุรกรรม",
-    "subTitle": "OPD Queue System",
-    "showClock": true,
-    "queueBgColor": "rgba(0,188,212,0.15)",
-    "showHistory": true,
-    "animationType": "scale",
-    "soundEnabled": false,
-    "channels": [
-      "1",
-      "2",
-      "3",
-      "4"
-    ]
-  },
-  {
     "id": "1780456207756",
     "name": "ซักประวัติตรวจโรคทั่วไป",
     "bgColor": "#bbdf07",

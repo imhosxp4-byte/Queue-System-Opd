@@ -21,6 +21,91 @@ const TTS_CACHE_DIR = path.join(DATA_DIR, 'tts-cache')
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
 if (!fs.existsSync(TTS_CACHE_DIR)) fs.mkdirSync(TTS_CACHE_DIR, { recursive: true })
 
+// ─── Seed default configs on first run ───────────────────────────────────────
+
+const DEFAULT_DISPLAY_CONFIGS = [
+  {
+    "id": "1780456207756",
+    "name": "ซักประวัติตรวจโรคทั่วไป",
+    "bgColor": "#bbdf07",
+    "textColor": "#FFFFFF",
+    "queueColor": "#00BCD4",
+    "font": "Sarabun",
+    "fontSize": 120,
+    "title": "ระบบคิวผู้ป่วยนอก-ตรวจโรคทั่วไป",
+    "subTitle": "GP",
+    "showClock": true,
+    "queueBgColor": "rgba(0,188,212,0.15)",
+    "showHistory": true,
+    "animationType": "scale",
+    "soundEnabled": true,
+    "channels": ["1", "2"]
+  }
+]
+
+const DEFAULT_QD_CONFIG = {
+  "title": "ระบบคิวผู้ป่วยนอก",
+  "headerBg": "#1a237e",
+  "headerTextColor": "#ffffff",
+  "showClock": true,
+  "clockColor": "#ffd54f",
+  "soundEnabled": true,
+  "colSpHeader": "ช่องบริการ",
+  "colQueueHeader": "หมายเลขที่เรียกเข้าบริการ",
+  "tableHeaderBg": "#2e7d32",
+  "tableHeaderColor": "#ffffff",
+  "spColumnBg": "#f8f9fa",
+  "spColumnColor": "#1a1a2e",
+  "queueBg": "#ffffff",
+  "queueColor": "#1565c0",
+  "spDisplayNames": {},
+  "spFontSize": 6,
+  "spColumnWidth": 220,
+  "spColumnVisible": true,
+  "borderColor": "#bbbbbb",
+  "borderWidth": 2,
+  "footerHeight": 46,
+  "rightPanelBg": "#1a0000",
+  "rightPanelHeaderBg": "#7f0000",
+  "rightPanelHeaderColor": "#ffffff",
+  "rightPanelLabel": "เรียกแล้วไม่มา",
+  "rightPanelQueueColor": "#ff6b6b",
+  "rightPanelWidth": 260,
+  "rightPanelFontSize": 8,
+  "rightPanelMaxItems": 10,
+  "font": "Sarabun",
+  "fontSize": 8,
+  "animationType": "scale",
+  "showFooter": true,
+  "marqueeText": "ยินดีต้อนรับสู่ระบบคิว | Welcome to Queue System | กรุณานั่งรอเรียกหมายเลขคิว",
+  "footerBg": "#1565c0",
+  "footerTextColor": "#ffffff",
+  "footerFontSize": 20,
+  "footerScrollSpeed": 30,
+  "hiddenSPs": [],
+  "displayStation": "",
+  "filterDepts": [],
+  "displayConfigId": "1779942389874",
+  "displayConfigName": "ซักประวัติอายุกรรม",
+  "displayChannels": ["1", "2", "3"],
+  "ttsEnabled": true,
+  "ttsSource": "server",
+  "ttsPrefix1": "ขอเชิญลำดับ",
+  "ttsMiddle": "ที่โต๊ะซักประวัติหมายเลข",
+  "ttsSuffix": "ค่ะ",
+  "ttsVoiceName": "Microsoft เปรมวดี Online (Natural) - Thai (Thailand)",
+  "ttsServerVoiceName": "th-TH-PremwadeeNeural",
+  "ttsRate": 0.6,
+  "ttsPitch": 0.9,
+  "ttsVolume": 0.8
+}
+
+const QD_DEFAULT_FILE_SEED = path.join(DATA_DIR, 'qd-default-config.json')
+if (!fs.existsSync(DISPLAY_CONFIGS_FILE))
+  fs.writeFileSync(DISPLAY_CONFIGS_FILE, JSON.stringify(DEFAULT_DISPLAY_CONFIGS, null, 2), 'utf-8')
+if (!fs.existsSync(QD_DEFAULT_FILE_SEED))
+  fs.writeFileSync(QD_DEFAULT_FILE_SEED, JSON.stringify(DEFAULT_QD_CONFIG, null, 2), 'utf-8')
+
 // ─── Settings helpers ─────────────────────────────────────────────────────────
 
 function loadSettings() {

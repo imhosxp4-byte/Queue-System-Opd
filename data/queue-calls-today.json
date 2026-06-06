@@ -23,7 +23,7 @@
       "mode": "slot"
     },
     "690606000002": {
-      "status": "skip",
+      "status": "cleared",
       "servicePoint": "1",
       "calledAt": "13:30:46",
       "queueNo": "D002",
@@ -45,7 +45,7 @@
       "mode": "slot"
     },
     "690606000004": {
-      "status": "skip",
+      "status": "cleared",
       "servicePoint": "2",
       "calledAt": "13:31:34",
       "queueNo": "D004",
@@ -53,7 +53,7 @@
       "department": "117 ห้องล้างแผล"
     },
     "690606000005": {
-      "status": "calling",
+      "status": "waiting",
       "servicePoint": "3",
       "calledAt": "13:34:33",
       "queueNo": "D005",
@@ -61,7 +61,7 @@
       "department": "117 ห้องล้างแผล"
     },
     "690606000006": {
-      "status": "calling",
+      "status": "waiting",
       "servicePoint": "3",
       "calledAt": "13:33:32",
       "queueNo": "D006",
@@ -69,7 +69,7 @@
       "department": "117 ห้องล้างแผล"
     },
     "690606000015": {
-      "status": "calling",
+      "status": "waiting",
       "servicePoint": "3",
       "calledAt": "13:33:53",
       "queueNo": "D007",
@@ -77,7 +77,7 @@
       "department": "117 ห้องล้างแผล"
     },
     "690606000016": {
-      "status": "calling",
+      "status": "waiting",
       "servicePoint": "3",
       "calledAt": "13:34:21",
       "queueNo": "D008",
@@ -85,7 +85,7 @@
       "department": "117 ห้องล้างแผล"
     },
     "690606000018": {
-      "status": "calling",
+      "status": "waiting",
       "servicePoint": "3",
       "calledAt": "13:35:02",
       "queueNo": "D009",
@@ -94,8 +94,8 @@
     },
     "690606004634": {
       "status": "waiting",
-      "servicePoint": "2",
-      "calledAt": "12:53:06",
+      "servicePoint": "1",
+      "calledAt": "14:19:37",
       "queueNo": "ER002",
       "mode": "slot",
       "department": "134 ER คุณภาพ ER"
@@ -117,7 +117,7 @@
       "department": "134 ER คุณภาพ ER"
     },
     "690606000019": {
-      "status": "calling",
+      "status": "waiting",
       "servicePoint": "3",
       "calledAt": "13:35:23",
       "queueNo": "D010",
@@ -154,7 +154,7 @@
       "department": "142 ห้องฉีดยา"
     },
     "690606000007": {
-      "status": "calling",
+      "status": "waiting",
       "servicePoint": "1",
       "calledAt": "13:16:27",
       "queueNo": "175",
