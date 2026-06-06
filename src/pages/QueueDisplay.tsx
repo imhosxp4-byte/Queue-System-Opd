@@ -227,6 +227,7 @@ export default function QueueDisplayPage() {
   const [serverTtsVoices, setServerTtsVoices] = useState<string[]>([])
   const [loadingVoices, setLoadingVoices] = useState(false)
   const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'ok' | 'err'>('idle')
+  const [previewError, setPreviewError] = useState<string>('')
   const resizeStartX = useRef(0)
   const resizeStartW = useRef(0)
 
@@ -533,19 +534,22 @@ export default function QueueDisplayPage() {
   const previewTTS = async () => {
     if (config.ttsSource === 'server') {
       setPreviewState('loading')
+      setPreviewError('')
       try {
         const text = [config.ttsPrefix1, 'A001', config.ttsMiddle, '1', config.ttsSuffix].filter(Boolean).join(' ')
-        const audioUrl = await previewServerTTS(text, config.ttsServerVoiceName, config.ttsRate ?? 1)
-        if (audioUrl) {
-          await playAudioUrl(audioUrl, config.ttsVolume ?? 1)
+        const result = await previewServerTTS(text, config.ttsServerVoiceName, config.ttsRate ?? 1)
+        if (result.url) {
+          await playAudioUrl(result.url, config.ttsVolume ?? 1)
           setPreviewState('ok')
         } else {
+          setPreviewError(result.error || 'error')
           setPreviewState('err')
         }
-      } catch {
+      } catch (e: unknown) {
+        setPreviewError(e instanceof Error ? e.message : 'error')
         setPreviewState('err')
       }
-      setTimeout(() => setPreviewState('idle'), 3000)
+      setTimeout(() => setPreviewState('idle'), 8000)
     } else {
       playTTS('A001', '1', config)
     }
@@ -1091,11 +1095,18 @@ export default function QueueDisplayPage() {
                     <span className="qd-tts-seg var">1</span>
                     <span className="qd-tts-seg edit">{config.ttsSuffix || '…'}</span>
                   </div>
-                  <button className="qd-tts-play-btn" onClick={previewTTS}
-                    disabled={previewState === 'loading'}
-                    style={previewState === 'ok' ? { background: '#16a34a' } : previewState === 'err' ? { background: '#dc2626' } : {}}>
-                    {previewState === 'loading' ? '⟳ กำลังสร้าง…' : previewState === 'ok' ? '✓ สำเร็จ' : previewState === 'err' ? '✗ ไม่สำเร็จ' : '▶ ทดสอบเสียง'}
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <button className="qd-tts-play-btn" onClick={previewTTS}
+                      disabled={previewState === 'loading'}
+                      style={previewState === 'ok' ? { background: '#16a34a' } : previewState === 'err' ? { background: '#dc2626' } : {}}>
+                      {previewState === 'loading' ? '⟳ กำลังสร้าง…' : previewState === 'ok' ? '✓ สำเร็จ' : previewState === 'err' ? '✗ ไม่สำเร็จ' : '▶ ทดสอบเสียง'}
+                    </button>
+                    {previewState === 'err' && previewError && (
+                      <div style={{ fontSize: 11, color: '#fca5a5', background: 'rgba(220,38,38,0.15)', padding: '4px 8px', borderRadius: 6, wordBreak: 'break-all' }}>
+                        {previewError}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <SRow label="ข้อความก่อนเลขคิว">

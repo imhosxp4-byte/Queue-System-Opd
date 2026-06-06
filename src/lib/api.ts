@@ -146,14 +146,16 @@ export async function getTTSVoices(): Promise<string[]> {
   try { return await fetchJSON<string[]>('/tts/voices') } catch { return [] }
 }
 
-export async function previewServerTTS(text: string, voiceName: string, rate: number): Promise<string | null> {
+export async function previewServerTTS(text: string, voiceName: string, rate: number): Promise<{ url: string | null; error?: string }> {
   try {
-    const r = await fetchJSON<{ success: boolean; audioUrl?: string }>('/tts/preview', {
+    const r = await fetchJSON<{ success: boolean; audioUrl?: string; message?: string }>('/tts/preview', {
       method: 'POST',
       body: JSON.stringify({ text, voiceName, rate })
     })
-    return r.success && r.audioUrl ? r.audioUrl : null
-  } catch { return null }
+    if (r.success && r.audioUrl) return { url: r.audioUrl }
+    return { url: null, error: r.message || 'server error' }
+  } catch (e: unknown) {
+    return { url: null, error: e instanceof Error ? e.message : 'unknown error' }
 }
 
 export function onQueueCalled(
