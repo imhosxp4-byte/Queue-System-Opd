@@ -221,6 +221,8 @@ export default function QueueDisplayPage() {
   const [availDepts, setAvailDepts] = useState<string[]>([])
 
   const audioCtx = useRef<AudioContext | null>(null)
+  const audioQueue = useRef<Array<{ url: string; volume: number }>>([])
+  const audioPlaying = useRef(false)
   const isResizing = useRef(false)
   const configRef = useRef(config)
   const [ttsVoices, setTtsVoices] = useState<SpeechSynthesisVoice[]>([])
@@ -421,33 +423,53 @@ export default function QueueDisplayPage() {
     return off
   }, [])
 
-  // Play audio URL via AudioContext (avoids browser autoplay block)
-  const playAudioUrl = async (url: string, volume: number) => {
-    try {
-      if (!audioCtx.current) audioCtx.current = new AudioContext()
-      if (audioCtx.current.state === 'suspended') await audioCtx.current.resume()
-      const resp = await fetch(url)
-      const buf = await resp.arrayBuffer()
-      const decoded = await audioCtx.current.decodeAudioData(buf)
-      const src = audioCtx.current.createBufferSource()
-      const gain = audioCtx.current.createGain()
-      gain.gain.value = volume
-      src.buffer = decoded
-      src.connect(gain)
-      gain.connect(audioCtx.current.destination)
-      src.start()
-    } catch (e) {
-      console.error('[playAudioUrl]', e)
-    }
+  // Play audio URL via AudioContext — returns Promise that resolves when audio ends
+  const playAudioUrl = (url: string, volume: number): Promise<void> => {
+    return new Promise(async (resolve) => {
+      try {
+        if (!audioCtx.current) audioCtx.current = new AudioContext()
+        if (audioCtx.current.state === 'suspended') await audioCtx.current.resume()
+        const resp = await fetch(url)
+        const buf = await resp.arrayBuffer()
+        const decoded = await audioCtx.current.decodeAudioData(buf)
+        const src = audioCtx.current.createBufferSource()
+        const gain = audioCtx.current.createGain()
+        gain.gain.value = volume
+        src.buffer = decoded
+        src.connect(gain)
+        gain.connect(audioCtx.current.destination)
+        src.onended = () => resolve()
+        src.start()
+      } catch (e) {
+        console.error('[playAudioUrl]', e)
+        resolve()
+      }
+    })
   }
 
-  // WebSocket: async TTS audio ready — play when received
+  // Drain audio queue sequentially — prevents sound overlap
+  const drainAudioQueue = async () => {
+    if (audioPlaying.current) return
+    audioPlaying.current = true
+    while (audioQueue.current.length > 0) {
+      const item = audioQueue.current.shift()!
+      await playAudioUrl(item.url, item.volume)
+    }
+    audioPlaying.current = false
+  }
+
+  const enqueueAudio = (url: string, volume: number) => {
+    audioQueue.current.push({ url, volume })
+    drainAudioQueue()
+  }
+
+  // WebSocket: async TTS audio ready — enqueue to prevent overlap
   useEffect(() => {
     const off = onQueueAudio(data => {
       const cfg = configRef.current
       if (cfg.displayConfigId && data.displayConfigId && data.displayConfigId !== cfg.displayConfigId) return
       if (cfg.filterDepts.length > 0 && (data as any).department && !cfg.filterDepts.includes((data as any).department)) return
-      playAudioUrl(data.audioUrl, cfg.ttsVolume ?? 1)
+      enqueueAudio(data.audioUrl, cfg.ttsVolume ?? 1)
     })
     return off
   }, []) // eslint-disable-line react-hooks/exhaustive-deps

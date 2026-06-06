@@ -207,11 +207,19 @@ app.use('/tts-audio', express.static(TTS_CACHE_DIR))
 const { exec } = require('child_process')
 const { MsEdgeTTS, OUTPUT_FORMAT, ProsodyOptions } = require('msedge-tts')
 
-// Edge Neural TTS voices with Thai support
+// Edge Neural TTS voices (requires internet, Microsoft Edge TTS service)
 const EDGE_VOICES = [
-  { name: 'th-TH-AcharaNeural',   label: '🇹🇭 อาจารา (ไทย หญิง) — Neural' },
-  { name: 'th-TH-NiwatNeural',    label: '🇹🇭 นิวัตร (ไทย ชาย) — Neural' },
-  { name: 'th-TH-PremwadeeNeural',label: '🇹🇭 เปรมวดี (ไทย หญิง) — Neural' },
+  // ── Thai ──────────────────────────────────────────────────────────────────
+  { name: 'th-TH-PremwadeeNeural',        label: '🇹🇭 เปรมวดี (ไทย หญิง) — Neural' },
+  { name: 'th-TH-AcharaNeural',           label: '🇹🇭 อาจารา (ไทย หญิง) — Neural' },
+  { name: 'th-TH-NiwatNeural',            label: '🇹🇭 นิวัตร (ไทย ชาย) — Neural' },
+  // ── English (Female) ──────────────────────────────────────────────────────
+  { name: 'en-US-JennyNeural',            label: '🇺🇸 Jenny (อังกฤษ หญิง) — Neural' },
+  { name: 'en-US-AriaNeural',             label: '🇺🇸 Aria (อังกฤษ หญิง) — Neural' },
+  { name: 'en-US-MichelleNeural',         label: '🇺🇸 Michelle (อังกฤษ หญิง) — Neural' },
+  { name: 'en-GB-SoniaNeural',            label: '🇬🇧 Sonia (อังกฤษ UK หญิง) — Neural' },
+  // ── English (Male) ────────────────────────────────────────────────────────
+  { name: 'en-US-GuyNeural',              label: '🇺🇸 Guy (อังกฤษ ชาย) — Neural' },
 ]
 
 function cleanTTSCache(exceptFile) {
@@ -220,18 +228,24 @@ function cleanTTSCache(exceptFile) {
     fs.readdirSync(TTS_CACHE_DIR).forEach(f => {
       if (f === exceptFile) return
       try {
-        if (now - fs.statSync(path.join(TTS_CACHE_DIR, f)).mtimeMs > 60000)
+        if (now - fs.statSync(path.join(TTS_CACHE_DIR, f)).mtimeMs > 8 * 60 * 60 * 1000)
           fs.unlinkSync(path.join(TTS_CACHE_DIR, f))
       } catch {}
     })
   } catch {}
 }
 
-// Edge Neural TTS generation
+// Edge Neural TTS generation (content-based cache: same text+voice+rate → instant return)
 async function generateEdgeTTS(text, voiceName, rate) {
   const voice = voiceName || 'th-TH-AcharaNeural'
-  const filename = `tts_${Date.now()}.mp3`
+  const cacheKey = require('crypto').createHash('md5').update(`${voice}_${String(rate)}_${text}`).digest('hex')
+  const filename = `tts_${cacheKey}.mp3`
   const filepath = path.join(TTS_CACHE_DIR, filename)
+
+  if (fs.existsSync(filepath)) {
+    console.log(`[EdgeTTS] cache hit → ${filename}`)
+    return `/tts-audio/${filename}`
+  }
 
   console.log(`[EdgeTTS] voice=${voice} rate=${rate} text="${text.slice(0, 40)}"`)
   const tts = new MsEdgeTTS()
