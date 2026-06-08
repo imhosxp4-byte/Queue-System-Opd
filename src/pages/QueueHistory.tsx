@@ -23,7 +23,13 @@ export default function QueueHistoryPage() {
   const [loading, setLoading] = useState(false)
   const [servicePoints, setServicePoints] = useState<ServicePoint[]>([])
   const [servicePoint, setServicePoint] = useState(sessionStorage.getItem('lastSP') || '')
-  const [filterDept, setFilterDept] = useState('')
+  const [filterDept, setFilterDept] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('qc_filter_depts')
+      const depts: string[] = saved ? JSON.parse(saved) : []
+      return depts.length > 0 ? depts[0] : ''
+    } catch { return '' }
+  })
   const [actionId, setActionId] = useState<string | null>(null)
   const [clock, setClock] = useState(new Date())
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
