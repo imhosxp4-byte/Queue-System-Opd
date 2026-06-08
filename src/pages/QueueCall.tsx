@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   getQueueList, callQueue, onQueueCalled, updateQueueStatus,
-  getServicePoints, getDisplayConfigs, getDisplayQDConfig, clearDisplayQueues
+  getServicePoints, getDisplayConfigs, getDisplayQDConfig, clearDisplayQueues, getCallsToday
 } from '../lib/api'
 import './QueueCall.css'
 
@@ -111,7 +111,7 @@ export default function QueueCallPage() {
 
   const loadQueues = useCallback(async () => {
     setLoading(true)
-    const res = await getQueueList(mode)
+    const [res, calls] = await Promise.all([getQueueList(mode), getCallsToday(mode)])
     setLoading(false)
     if (res.success) {
       const rows = res.data as QueueRow[]
@@ -121,8 +121,9 @@ export default function QueueCallPage() {
         if (prev) return prev
         const calling = rows.find(r => r.status === 'calling')
         if (!calling) return null
-        const queueNo = calling.queue_slot || calling.queue_no || ''
-        return { queueNo, servicePoint: calling.service_point || '' }
+        const queueNo = String(calling.queue_slot || calling.queue_no || '')
+        const callEntry = calls.find(c => c.vn === calling.vn)
+        return { queueNo, servicePoint: calling.service_point || '', calledAt: callEntry?.calledAt }
       })
     }
   }, [mode])
