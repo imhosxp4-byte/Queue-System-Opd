@@ -700,7 +700,21 @@
 .qc-td-center { text-align: center; }
 .qc-td-date  { font-size: 13px; color: #90A4AE; white-space: nowrap; line-height: 1.5; }
 .qc-td-time  { font-size: 12px; color: #0097A7; font-weight: 700; font-variant-numeric: tabular-nums; }
-.qc-td-hn    { font-size: 13px; color: #78909C; white-space: nowrap; }
+.qc-td-hn {
+  white-space: nowrap;
+}
+.qc-td-hn span {
+  display: inline-block;
+  background: #E3F2FD;
+  color: #0D47A1;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid #BBDEFB;
+}
 .qc-td-name  { font-size: 15px; font-weight: 600; color: #1A237E; min-width: 180px; }
 .qc-td-ins   { font-size: 13px; color: #546E7A; white-space: nowrap; }
 .qc-td-dep   { font-size: 13px; font-weight: 600; color: #0D47A1; white-space: nowrap; }
