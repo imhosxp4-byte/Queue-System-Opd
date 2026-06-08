@@ -316,8 +316,9 @@
   backdrop-filter: blur(14px);
 }
 .qc-serve-label {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
   font-size: 14px; font-weight: 700; color: rgba(15,65,78,0.85);
-  margin-bottom: 10px; text-align: left;
+  margin-bottom: 10px;
 }
 .qc-serve-row { display: flex; align-items: center; justify-content: center; gap: 10px; }
 .qc-serve-prefix {
@@ -328,7 +329,7 @@
   border: 1px solid rgba(255,255,255,0.7);
 }
 .qc-serve-no { font-size: 72px; font-weight: 900; color: #0D3D4A; line-height: 1; letter-spacing: -2px; text-shadow: 0 2px 8px rgba(255,255,255,0.5); }
-.qc-serve-time { margin-top: 6px; font-size: 14px; font-weight: 600; color: #1565C0; background: rgba(21,101,192,0.1); border-radius: 8px; padding: 4px 12px; display: inline-block; }
+.qc-serve-time { font-size: 12px; font-weight: 700; color: #1565C0; background: rgba(21,101,192,0.12); border-radius: 6px; padding: 3px 8px; white-space: nowrap; flex-shrink: 0; }
 .qc-serve-empty { font-size: 56px; font-weight: 900; color: rgba(15,65,78,0.22); line-height: 1; padding: 8px 0; }
 
 /* Action buttons */

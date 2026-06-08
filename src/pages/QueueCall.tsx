@@ -653,14 +653,14 @@ export default function QueueCallPage() {
         {/* ─── Left Panel ─── */}
         <aside className="qc-panel-left">
           <div className="qc-serve-card">
-            <p className="qc-serve-label">กำลังให้บริการ &nbsp;·&nbsp; {currentSpName || '—'}</p>
+            <div className="qc-serve-label">
+              <span>กำลังให้บริการ &nbsp;·&nbsp; {currentSpName || '—'}</span>
+              {currentCalled?.calledAt && (
+                <span className="qc-serve-time">🕐 {currentCalled.calledAt} น.</span>
+              )}
+            </div>
             {currentCalled ? (
-              <>
-                <div className="qc-serve-no">{currentCalled.queueNo}</div>
-                {currentCalled.calledAt && (
-                  <div className="qc-serve-time">🕐 เรียกเมื่อ {currentCalled.calledAt} น.</div>
-                )}
-              </>
+              <div className="qc-serve-no">{currentCalled.queueNo}</div>
             ) : (
               <div className="qc-serve-empty">—</div>
             )}
