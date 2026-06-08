@@ -54,7 +54,7 @@ export default function QueueCallPage() {
   const [deptSearch, setDeptSearch] = useState('')
   const deptSearchRef = useRef<HTMLInputElement>(null)
   const [filterStatus, setFilterStatus] = useState<'all' | 'waiting' | 'calling'>('all')
-  const [currentCalled, setCurrentCalled] = useState<{ queueNo: string; servicePoint: string } | null>(null)
+  const [currentCalled, setCurrentCalled] = useState<{ queueNo: string; servicePoint: string; calledAt?: string } | null>(null)
   const [clock, setClock] = useState(new Date())
   const [showSettingsMenu, setShowSettingsMenu] = useState(false)
   const [quickCall, setQuickCall] = useState('')
@@ -282,7 +282,7 @@ export default function QueueCallPage() {
       const res = await callQueue(queue.vn, currentSpName, mode, selectedDisplayId || undefined)
       if (res.success) {
         const calledNo = res.queueNo || queue.queue_no
-        setCurrentCalled({ queueNo: calledNo, servicePoint: currentSpName })
+        setCurrentCalled({ queueNo: calledNo, servicePoint: currentSpName, calledAt: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) })
         if (!selectedDisplayId) {
           const r = callNextBtnRef.current?.getBoundingClientRect()
           setCheckDisplayPopup({ queueNo: calledNo, sp: currentSpName, px: r ? r.right + 12 : 320, py: r ? r.top + r.height / 2 : 200 })
@@ -376,7 +376,7 @@ export default function QueueCallPage() {
     try {
       const res = await callQueue(val, currentSpName, mode, selectedDisplayId || undefined)
       if (res.success) {
-        setCurrentCalled({ queueNo: res.queueNo || val, servicePoint: currentSpName })
+        setCurrentCalled({ queueNo: res.queueNo || val, servicePoint: currentSpName, calledAt: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) })
         setQuickCall('')
         setQuickCallMsg({ ok: true, text: `เรียกคิว ${res.queueNo || val} สำเร็จ` })
         loadQueues()
@@ -655,7 +655,12 @@ export default function QueueCallPage() {
           <div className="qc-serve-card">
             <p className="qc-serve-label">กำลังให้บริการ &nbsp;·&nbsp; {currentSpName || '—'}</p>
             {currentCalled ? (
-              <div className="qc-serve-no">{currentCalled.queueNo}</div>
+              <>
+                <div className="qc-serve-no">{currentCalled.queueNo}</div>
+                {currentCalled.calledAt && (
+                  <div className="qc-serve-time">🕐 เรียกเมื่อ {currentCalled.calledAt} น.</div>
+                )}
+              </>
             ) : (
               <div className="qc-serve-empty">—</div>
             )}

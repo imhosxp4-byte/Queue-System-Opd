@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getQueueList, callQueue, updateQueueStatus, getServicePoints } from '../lib/api'
+import { getQueueList, callQueue, updateQueueStatus, getServicePoints, getCallsToday, type CallEntry } from '../lib/api'
 import './QueueHistory.css'
 
 type HistoryMode = 'slot' | 'opd' | 'cur_dep' | 'slot_cur'
@@ -30,6 +30,7 @@ export default function QueueHistoryPage() {
       return depts.length > 0 ? depts[0] : ''
     } catch { return '' }
   })
+  const [callTimeMap, setCallTimeMap] = useState<Record<string, string>>({})
   const [actionId, setActionId] = useState<string | null>(null)
   const [clock, setClock] = useState(new Date())
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -43,8 +44,11 @@ export default function QueueHistoryPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await getQueueList(mode)
+      const [res, calls] = await Promise.all([getQueueList(mode), getCallsToday(mode)])
       if (res.success) setQueues(res.data)
+      const map: Record<string, string> = {}
+      calls.forEach((c: CallEntry) => { if (c.vn && c.calledAt) map[c.vn] = c.calledAt })
+      setCallTimeMap(map)
     } catch {}
     setLoading(false)
   }, [mode])
@@ -256,6 +260,7 @@ export default function QueueHistoryPage() {
                     <div className="qh-item-info">
                       <span className="qh-item-name">{q.queue_name || '—'}</span>
                       <span className="qh-item-meta">HN {q.hn || '—'} · {q.department || '—'}</span>
+                      {callTimeMap[q.vn] && <span className="qh-item-time">🕐 {callTimeMap[q.vn]} น.</span>}
                     </div>
                     <div className="qh-item-btns">
                       <button className="qh-btn qh-btn-recall" onClick={() => handleRecall(q)} disabled={!!actionId}>
@@ -313,6 +318,7 @@ export default function QueueHistoryPage() {
                     <div className="qh-item-info">
                       <span className="qh-item-name">{q.queue_name || '—'}</span>
                       <span className="qh-item-meta">HN {q.hn || '—'} · {q.department || '—'}</span>
+                      {callTimeMap[q.vn] && <span className="qh-item-time">🕐 {callTimeMap[q.vn]} น.</span>}
                     </div>
                     <div className="qh-item-btns">
                       <button className="qh-btn qh-btn-recall" onClick={() => handleRecall(q)} disabled={!!actionId}>
@@ -361,6 +367,7 @@ export default function QueueHistoryPage() {
                 <div className="qh-item-info">
                   <span className="qh-item-name">{q.queue_name || '—'}</span>
                   <span className="qh-item-meta">HN {q.hn || '—'} · {q.department || '—'}</span>
+                  {callTimeMap[q.vn] && <span className="qh-item-time">🕐 {callTimeMap[q.vn]} น.</span>}
                 </div>
                 <div className="qh-item-btns">
                   <div className="qh-badge done">✓ เสร็จแล้ว</div>
