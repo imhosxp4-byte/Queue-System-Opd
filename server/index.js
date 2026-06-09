@@ -313,6 +313,28 @@ app.get('/api/tts/test', async (req, res) => {
   }
 })
 
+// Pre-warm TTS cache for upcoming queues — respond immediately, generate in background
+app.post('/api/tts/prewarm', (req, res) => {
+  res.json({ success: true })
+  const { queues = [], servicePoint = '', displayConfigId = '' } = req.body || {}
+  try {
+    const qdFile = displayConfigId ? qdConfigFile(displayConfigId) : QD_DEFAULT_FILE
+    const qdCfg = fs.existsSync(qdFile)
+      ? JSON.parse(fs.readFileSync(qdFile, 'utf-8'))
+      : (fs.existsSync(QD_DEFAULT_FILE) ? JSON.parse(fs.readFileSync(QD_DEFAULT_FILE, 'utf-8')) : null)
+    if (!qdCfg || !qdCfg.ttsEnabled || qdCfg.ttsSource !== 'server') return
+    const voiceName = qdCfg.ttsServerVoiceName || qdCfg.ttsVoiceName || ''
+    for (const q of queues.slice(0, 5)) {
+      const text = (qdCfg.ttsShowName === true) && q.name
+        ? [qdCfg.ttsPrefix1, q.name, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
+        : [qdCfg.ttsPrefix1, q.no, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
+      generateServerTTS(text, voiceName, qdCfg.ttsRate ?? 1)
+        .then(() => console.log(`[TTS prewarm] ${q.no}`))
+        .catch(() => {})
+    }
+  } catch {}
+})
+
 // Preview TTS — generate audio and return URL for immediate playback
 app.post('/api/tts/preview', async (req, res) => {
   try {
@@ -723,6 +745,23 @@ app.post('/api/queue/call', async (req, res) => {
         const voiceName = qdCfg.ttsServerVoiceName || qdCfg.ttsVoiceName || ''
         generateServerTTS(text, voiceName, qdCfg.ttsRate ?? 1).then(audioUrl => {
           broadcast({ type: 'queue:audio', data: { audioUrl, displayConfigId: displayConfigId || null, department } })
+          // Pre-warm TTS cache for next 3 waiting queues so they play instantly
+          try {
+            const currentCalls = getTodayCalls()
+            const waitingNext = rows
+              .filter(r => r.vn !== found.vn && (!currentCalls[r.vn] || currentCalls[r.vn].status === 'waiting'))
+              .slice(0, 3)
+            for (const next of waitingNext) {
+              const nextNo = next.queue_slot || (next.queue_no != null ? String(next.queue_no) : '')
+              const nextName = next.queue_name || ''
+              const nextText = (qdCfg.ttsShowName === true) && nextName
+                ? [qdCfg.ttsPrefix1, nextName, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
+                : [qdCfg.ttsPrefix1, nextNo, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
+              generateServerTTS(nextText, voiceName, qdCfg.ttsRate ?? 1)
+                .then(() => console.log(`[TTS prewarm] ${nextNo}`))
+                .catch(() => {})
+            }
+          } catch {}
         }).catch(err => console.error('[TTS async]', err.message))
       }
     } catch (ttsErr) {
@@ -739,7 +778,7 @@ app.get('/api/queue/calls-today', (req, res) => {
   const modeFilter = req.query.mode || null
   const result = Object.entries(calls)
     .filter(([, v]) => {
-      if (v.status !== 'skip') return false
+      if (!v.calledAt) return false
       if (modeFilter === 'cur_dep') return v.mode === 'cur_dep'
       if (modeFilter === 'slot_cur') return v.mode === 'slot_cur'
       if (modeFilter) return !v.mode || (v.mode !== 'cur_dep' && v.mode !== 'slot_cur')

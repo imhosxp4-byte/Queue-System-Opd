@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   getQueueList, callQueue, onQueueCalled, updateQueueStatus,
-  getServicePoints, getDisplayConfigs, getDisplayQDConfig, clearDisplayQueues, getCallsToday
+  getServicePoints, getDisplayConfigs, getDisplayQDConfig, clearDisplayQueues, getCallsToday, prewarmTTS
 } from '../lib/api'
 import './QueueCall.css'
 
@@ -55,6 +55,7 @@ export default function QueueCallPage() {
   const deptSearchRef = useRef<HTMLInputElement>(null)
   const [filterStatus, setFilterStatus] = useState<'all' | 'waiting' | 'calling'>('all')
   const [currentCalled, setCurrentCalled] = useState<{ queueNo: string; servicePoint: string; calledAt?: string } | null>(null)
+  const [callTimeMap, setCallTimeMap] = useState<Record<string, string>>({})
   const [clock, setClock] = useState(new Date())
   const [showSettingsMenu, setShowSettingsMenu] = useState(false)
   const [quickCall, setQuickCall] = useState('')
@@ -72,6 +73,8 @@ export default function QueueCallPage() {
   const [lockedVn, setLockedVn] = useState<string | null>(null)
   const [showShortcutHelp, setShowShortcutHelp] = useState(false)
 
+  const lastCalledVnRef = useRef<string | null>(null)
+  const prewarmCtxRef = useRef<{ spName: string; displayId: string }>({ spName: '', displayId: '' })
   const settingsRef = useRef<HTMLDivElement>(null)
   const quickCallRef = useRef<HTMLInputElement>(null)
   const deptMenuRef = useRef<HTMLDivElement>(null)
@@ -116,14 +119,24 @@ export default function QueueCallPage() {
     if (res.success) {
       const rows = res.data as QueueRow[]
       setQueues(rows)
-      // restore currentCalled from a calling queue if state was lost (e.g. page reload)
+      // build vn → calledAt map from today's calls (merge so locally-set times don't flicker)
+      const map: Record<string, string> = {}
+      calls.forEach(c => { if (c.vn && c.calledAt) map[c.vn] = c.calledAt })
+      setCallTimeMap(prev => ({ ...prev, ...map }))
+      // restore currentCalled — pick the MOST RECENTLY called (by calledAt) queue on reload
       setCurrentCalled(prev => {
         if (prev) return prev
-        const calling = rows.find(r => r.status === 'calling')
-        if (!calling) return null
-        const queueNo = String(calling.queue_slot || calling.queue_no || '')
-        const callEntry = calls.find(c => c.vn === calling.vn)
-        return { queueNo, servicePoint: calling.service_point || '', calledAt: callEntry?.calledAt }
+        const callingRows = rows.filter(r => r.status === 'calling')
+        if (callingRows.length === 0) return null
+        const latest = callingRows.reduce((best, r) => {
+          const t = calls.find(c => c.vn === r.vn)?.calledAt || ''
+          const bestT = calls.find(c => c.vn === best.vn)?.calledAt || ''
+          return t > bestT ? r : best
+        })
+        const queueNo = String(latest.queue_slot || latest.queue_no || '')
+        const callEntry = calls.find(c => c.vn === latest.vn)
+        if (!lastCalledVnRef.current) lastCalledVnRef.current = latest.vn
+        return { queueNo, servicePoint: latest.service_point || '', calledAt: callEntry?.calledAt }
       })
     }
   }, [mode])
@@ -152,6 +165,20 @@ export default function QueueCallPage() {
     })
     return off
   }, [loadQueues])
+
+  // Keep prewarmCtxRef current + trigger prewarm whenever SP/display/queues change
+  useEffect(() => {
+    prewarmCtxRef.current = { spName: currentSpName, displayId: selectedDisplayId }
+  }, [currentSpName, selectedDisplayId])
+
+  useEffect(() => {
+    if (!currentSpName || !selectedDisplayId) return
+    const waiting = queues
+      .filter(q => q.status === 'waiting')
+      .slice(0, 5)
+      .map(q => ({ no: String(q.queue_slot || q.queue_no || ''), name: q.queue_name || '' }))
+    if (waiting.length) prewarmTTS(waiting, currentSpName, selectedDisplayId)
+  }, [queues, currentSpName, selectedDisplayId])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -282,8 +309,11 @@ export default function QueueCallPage() {
     try {
       const res = await callQueue(queue.vn, currentSpName, mode, selectedDisplayId || undefined)
       if (res.success) {
+        lastCalledVnRef.current = queue.vn
         const calledNo = res.queueNo || queue.queue_no
-        setCurrentCalled({ queueNo: calledNo, servicePoint: currentSpName, calledAt: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) })
+        const calledAt = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+        setCurrentCalled({ queueNo: calledNo, servicePoint: currentSpName, calledAt })
+        setCallTimeMap(prev => ({ ...prev, [queue.vn]: calledAt }))
         if (!selectedDisplayId) {
           const r = callNextBtnRef.current?.getBoundingClientRect()
           setCheckDisplayPopup({ queueNo: calledNo, sp: currentSpName, px: r ? r.right + 12 : 320, py: r ? r.top + r.height / 2 : 200 })
@@ -318,8 +348,20 @@ export default function QueueCallPage() {
   }
 
   const handleRecall = async () => {
-    const cur = queues.find(q => q.status === 'calling')
-    if (cur) await handleCall(cur)
+    if (!currentCalled) return
+    // Use stored VN (most precise) or fall back to queueNo — server resolves both
+    const identifier = lastCalledVnRef.current ?? String(currentCalled.queueNo)
+    setCallingId('__recall__')
+    try {
+      const res = await callQueue(identifier, currentSpName, mode, selectedDisplayId || undefined)
+      if (res.success) {
+        const calledNo = res.queueNo ?? String(currentCalled.queueNo)
+        const calledAt = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+        setCurrentCalled({ queueNo: calledNo, servicePoint: currentSpName, calledAt })
+        loadQueues()
+      }
+    } catch {}
+    finally { setCallingId(null) }
   }
 
   const handleNoShow = async () => {
@@ -377,7 +419,8 @@ export default function QueueCallPage() {
     try {
       const res = await callQueue(val, currentSpName, mode, selectedDisplayId || undefined)
       if (res.success) {
-        setCurrentCalled({ queueNo: res.queueNo || val, servicePoint: currentSpName, calledAt: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) })
+        const calledAt = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+        setCurrentCalled({ queueNo: res.queueNo || val, servicePoint: currentSpName, calledAt })
         setQuickCall('')
         setQuickCallMsg({ ok: true, text: `เรียกคิว ${res.queueNo || val} สำเร็จ` })
         loadQueues()
@@ -677,7 +720,7 @@ export default function QueueCallPage() {
           </button>
 
           <button className="qc-btn-action qc-btn-recall" onClick={handleRecall}
-            disabled={!!callingId || !hasCallingQueue}>
+            disabled={!!callingId || !currentCalled}>
             <span className="qc-btn-icon">○</span>เรียกซ้ำ
             <span className="qc-kbd">F3</span>
           </button>
@@ -857,7 +900,7 @@ export default function QueueCallPage() {
                   <th>{(mode === 'slot' || mode === 'slot_cur') ? 'oqueue' : 'คิว'}</th>
                   <th>HN</th>
                   <th>ชื่อ</th><th>สิทธิการรักษา</th><th>แผนก</th>
-                  <th>ประเภท</th><th>สถานะ</th>
+                  <th>ประเภท</th><th>สถานะ</th><th>เวลาเรียก</th>
                   <th>
                     <div className="qc-th-action">
                       จัดการ
@@ -908,6 +951,7 @@ export default function QueueCallPage() {
                           {statusLabel[q.status] || q.status}
                         </span>
                       </td>
+                      <td className="qc-td-calltime">{callTimeMap[q.vn] || '—'}</td>
                       <td className="qc-td-action">
                         {q.status === 'waiting' && (
                           <button className="btn btn-primary qc-call-btn" onClick={() => handleCall(q)} disabled={!!callingId}>

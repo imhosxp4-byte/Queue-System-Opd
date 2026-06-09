@@ -49,6 +49,11 @@ interface QDConfig {
   font: string
   fontSize: number
   animationType: 'fade' | 'slide' | 'scale' | 'bounce'
+  // Blink on call
+  blinkEnabled: boolean
+  blinkColor: string
+  blinkCount: number
+  blinkSpeed: number
   // Footer
   showFooter: boolean
   marqueeText: string
@@ -120,6 +125,10 @@ const DEFAULT: QDConfig = {
   font: 'Sarabun',
   fontSize: 8,
   animationType: 'scale',
+  blinkEnabled: true,
+  blinkColor: '#ffeb3b',
+  blinkCount: 6,
+  blinkSpeed: 300,
   showFooter: true,
   marqueeText: 'ยินดีต้อนรับสู่ระบบคิว | Welcome to Queue System | กรุณานั่งรอเรียกหมายเลขคิว',
   footerBg: '#1565c0',
@@ -220,9 +229,14 @@ export default function QueueDisplayPage() {
   const [systemFonts, setSystemFonts] = useState<string[]>([])
   const [availDepts, setAvailDepts] = useState<string[]>([])
 
+  const [blinkingSPs, setBlinkingSPs] = useState<Set<string>>(new Set())
+  const blinkTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
   const audioCtx = useRef<AudioContext | null>(null)
   const audioQueue = useRef<Array<{ url: string; volume: number }>>([])
   const audioPlaying = useRef(false)
+  const serverTtsFallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const browserTtsPlayedForCall = useRef(false)
   const isResizing = useRef(false)
   const configRef = useRef(config)
   const [ttsVoices, setTtsVoices] = useState<SpeechSynthesisVoice[]>([])
@@ -366,7 +380,7 @@ export default function QueueDisplayPage() {
         getCallsToday(),
         getQueueList().catch(() => ({ success: false, data: [] }))
       ])
-      setNoShowQueues(calls)
+      setNoShowQueues(calls.filter((c: CallEntry) => c.status === 'skip'))
       if (queueRes.success) {
         const depts = Array.from(new Set(queueRes.data.map((q: QueueItem) => q.department).filter(Boolean))).sort() as string[]
         setAvailDepts(depts)
@@ -405,13 +419,31 @@ export default function QueueDisplayPage() {
       setSpQueues(prev => ({ ...prev, [data.servicePoint]: data.queueNo }))
       setSpNames(prev => ({ ...prev, [data.servicePoint]: (data as any).queueName || '' }))
       setRowAnimKeys(prev => ({ ...prev, [data.servicePoint]: (prev[data.servicePoint] || 0) + 1 }))
+      if (cfg.blinkEnabled) {
+        const sp = data.servicePoint
+        clearTimeout(blinkTimers.current[sp])
+        setBlinkingSPs(prev => new Set([...prev, sp]))
+        blinkTimers.current[sp] = setTimeout(() => {
+          setBlinkingSPs(prev => { const n = new Set(prev); n.delete(sp); return n })
+        }, cfg.blinkCount * cfg.blinkSpeed * 2 + 400)
+      }
       if (cfg.ttsEnabled && cfg.ttsSource !== 'server') {
         playTTS(data.queueNo, data.servicePoint, cfg, (data as any).queueName)
-      } else if (cfg.soundEnabled && !(cfg.ttsEnabled && cfg.ttsSource === 'server')) {
-        // Don't beep when server TTS is enabled — the TTS announcement replaces the beep
+      } else if (cfg.ttsEnabled && cfg.ttsSource === 'server') {
+        // Server TTS: start 800ms fallback — gives cache hits plenty of time to arrive
+        browserTtsPlayedForCall.current = false
+        if (serverTtsFallbackTimer.current) clearTimeout(serverTtsFallbackTimer.current)
+        const snapData = data, snapCfg = cfg
+        serverTtsFallbackTimer.current = setTimeout(() => {
+          if (!browserTtsPlayedForCall.current) {
+            browserTtsPlayedForCall.current = true
+            playTTS(snapData.queueNo, snapData.servicePoint, snapCfg, (snapData as any).queueName)
+          }
+        }, 800)
+      } else if (cfg.soundEnabled) {
         playBeep()
       }
-      setTimeout(() => getCallsToday().then(setNoShowQueues), 800)
+      setTimeout(() => getCallsToday().then(c => setNoShowQueues(c.filter((x: CallEntry) => x.status === 'skip'))), 800)
     })
     return off
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -419,7 +451,7 @@ export default function QueueDisplayPage() {
   // WebSocket: status changed (skip/done/waiting) — refresh no-show list immediately
   useEffect(() => {
     const off = onQueueStatusChanged(() => {
-      getCallsToday().then(setNoShowQueues)
+      getCallsToday().then(c => setNoShowQueues(c.filter((x: CallEntry) => x.status === 'skip')))
     })
     return off
   }, [])
@@ -476,6 +508,14 @@ export default function QueueDisplayPage() {
       const cfg = configRef.current
       if (cfg.displayConfigId && data.displayConfigId && data.displayConfigId !== cfg.displayConfigId) return
       if (cfg.filterDepts.length > 0 && (data as any).department && !cfg.filterDepts.includes((data as any).department)) return
+      if (serverTtsFallbackTimer.current) { clearTimeout(serverTtsFallbackTimer.current); serverTtsFallbackTimer.current = null }
+      // Skip server TTS only if browser TTS is actively speaking — prevents double announcement
+      // If browser TTS fired but failed silently (speaking=false), still play server TTS
+      if (browserTtsPlayedForCall.current && window.speechSynthesis?.speaking) {
+        browserTtsPlayedForCall.current = false
+        return
+      }
+      browserTtsPlayedForCall.current = false
       enqueueAudio(data.audioUrl, cfg.ttsVolume ?? 1)
     })
     return off
@@ -674,6 +714,7 @@ export default function QueueDisplayPage() {
           const patientName = rawName && config.maskLastName ? maskName(rawName) : rawName
           const badge = queueNo ? extractBadge(queueNo) : null
           const rowKey = rowAnimKeys[sp.name] || rowAnimKeys[sp.id] || 0
+          const isBlinking = config.blinkEnabled && !!queueNo && (blinkingSPs.has(sp.name) || blinkingSPs.has(sp.id))
           return (
             <div key={sp.id} className="qd-row" style={{ borderBottom: border }}>
               {config.spColumnVisible && (
@@ -681,7 +722,14 @@ export default function QueueDisplayPage() {
                   {displayName}
                 </div>
               )}
-              <div className="qd-td qd-td-queue" style={{ background: config.queueBg }}>
+              <div className="qd-td qd-td-queue" style={{
+                background: config.queueBg,
+                ...(isBlinking ? {
+                  animation: `qd-blink-anim ${config.blinkSpeed}ms step-end ${config.blinkCount}`,
+                  '--qd-blink-color': config.blinkColor,
+                  '--qd-queue-bg': config.queueBg,
+                } as React.CSSProperties : {})
+              }}>
                 {queueNo ? (
                   <div key={rowKey} className={`qd-queue-cell ${animClass}`}>
                     {patientName ? (
@@ -786,20 +834,14 @@ export default function QueueDisplayPage() {
               <span className="qd-right-empty">ไม่มีรายการ</span>
             ) : (
               <div className="qd-noshow-list">
-                {noShowQueues.slice(0, config.rightPanelMaxItems).map((item, i) => {
+                {noShowQueues.slice(0, config.rightPanelMaxItems).map((item) => {
                   const badge = extractBadge(item.queueNo)
-                  const isFirst = i === 0
-                  const fsize = isFirst
-                    ? `${config.rightPanelFontSize}vw`
-                    : `${Math.max(1.5, config.rightPanelFontSize * 0.58).toFixed(1)}vw`
                   return (
-                    <div key={item.vn} className={`qd-noshow-item${isFirst ? ' qd-noshow-first' : ''}`}
+                    <div key={item.vn} className="qd-noshow-item"
                       style={{ height: config.noShowItemHeight, minHeight: config.noShowItemHeight }}>
                       <div className="qd-noshow-queue">
-                        {badge && (
-                          <span className={`qd-right-badge${isFirst ? ' large' : ''}`}>{badge}</span>
-                        )}
-                        <span className="qd-noshow-no" style={{ color: config.rightPanelQueueColor, fontSize: fsize }}>
+                        {badge && <span className="qd-right-badge">{badge}</span>}
+                        <span className="qd-noshow-no" style={{ color: config.rightPanelQueueColor, fontSize: `${config.rightPanelFontSize}vw` }}>
                           {item.queueNo}
                         </span>
                       </div>
@@ -1076,6 +1118,42 @@ export default function QueueDisplayPage() {
                   ))}
                 </div>
               </SRow>
+
+              {/* ── กระพริบขณะเรียกคิว ── */}
+              <SSec>กระพริบขณะเรียกคิว</SSec>
+              <SRow label="เปิดใช้กระพริบ">
+                <Tog checked={config.blinkEnabled} onChange={v => setConfig(c => ({ ...c, blinkEnabled: v }))} />
+              </SRow>
+              {config.blinkEnabled && <>
+                <SRow label="สีกระพริบ">
+                  <CInput value={config.blinkColor} onChange={v => setConfig(c => ({ ...c, blinkColor: v }))} />
+                </SRow>
+                <SRow label={`จำนวนครั้ง: ${config.blinkCount} ครั้ง`}>
+                  <input type="range" min="1" max="20" step="1" value={config.blinkCount}
+                    onChange={e => setConfig(c => ({ ...c, blinkCount: Number(e.target.value) }))}
+                    className="qd-slider" />
+                </SRow>
+                <SRow label={`ความเร็ว: ${config.blinkSpeed} ms`} hint="ค่าน้อย = เร็ว">
+                  <input type="range" min="100" max="1000" step="50" value={config.blinkSpeed}
+                    onChange={e => setConfig(c => ({ ...c, blinkSpeed: Number(e.target.value) }))}
+                    className="qd-slider" />
+                </SRow>
+                <div style={{ padding: '4px 0 4px 8px' }}>
+                  <button
+                    className="qd-tts-play-btn"
+                    style={{ fontSize: 12, padding: '5px 14px' }}
+                    onClick={() => {
+                      const sp = visibleSPs[0]?.name || visibleSPs[0]?.id
+                      if (!sp) return
+                      clearTimeout(blinkTimers.current[sp])
+                      setBlinkingSPs(prev => new Set([...prev, sp]))
+                      blinkTimers.current[sp] = setTimeout(() => {
+                        setBlinkingSPs(prev => { const n = new Set(prev); n.delete(sp); return n })
+                      }, config.blinkCount * config.blinkSpeed * 2 + 400)
+                    }}
+                  >▶ ทดสอบกระพริบ</button>
+                </div>
+              </>}
 
               {/* ── เสียงประกาศ TTS ── */}
               <SSec>เสียงประกาศ (Text-to-Speech)</SSec>

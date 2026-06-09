@@ -451,15 +451,23 @@
   font-size: 11px;
   color: rgba(0,0,0,0.42);
 }
-.qh-item-time {
-  font-size: 11px;
-  font-weight: 600;
-  color: #1565C0;
-  background: rgba(21,101,192,0.08);
-  border-radius: 5px;
-  padding: 1px 7px;
-  display: inline-block;
-  margin-top: 2px;
+.qh-item-calltime {
+  flex-shrink: 0;
+  width: 90px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.qh-calltime-label {
+  font-size: 10px;
+  color: rgba(0,0,0,0.38);
+  font-weight: 500;
+}
+.qh-calltime-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0D47A1;
 }
 
 /* Badge */

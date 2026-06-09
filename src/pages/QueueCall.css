@@ -717,9 +717,10 @@
   border-radius: 6px;
   border: 1px solid #BBDEFB;
 }
-.qc-td-name  { font-size: 15px; font-weight: 600; color: #1A237E; min-width: 180px; }
-.qc-td-ins   { font-size: 13px; color: #546E7A; white-space: nowrap; }
-.qc-td-dep   { font-size: 13px; font-weight: 600; color: #0D47A1; white-space: nowrap; }
+.qc-td-name     { font-size: 15px; font-weight: 600; color: #1A237E; min-width: 180px; }
+.qc-td-ins      { font-size: 13px; color: #546E7A; white-space: nowrap; }
+.qc-td-dep      { font-size: 13px; font-weight: 600; color: #0D47A1; white-space: nowrap; }
+.qc-td-calltime { font-size: 13px; color: #0D47A1; font-weight: 600; white-space: nowrap; text-align: center; }
 
 /* ── Queue number pills ── */
 .qc-slot-pill {

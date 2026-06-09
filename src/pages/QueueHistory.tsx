@@ -48,7 +48,7 @@ export default function QueueHistoryPage() {
       if (res.success) setQueues(res.data)
       const map: Record<string, string> = {}
       calls.forEach((c: CallEntry) => { if (c.vn && c.calledAt) map[c.vn] = c.calledAt })
-      setCallTimeMap(map)
+      setCallTimeMap(prev => ({ ...prev, ...map }))
     } catch {}
     setLoading(false)
   }, [mode])
@@ -85,6 +85,8 @@ export default function QueueHistoryPage() {
     try {
       const res = await callQueue(q.vn, servicePoint, mode)
       if (res.success) {
+        const calledAt = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+        setCallTimeMap(prev => ({ ...prev, [q.vn]: calledAt }))
         flash(true, `เรียกซ้ำ ${res.queueNo || q.queue_slot || q.queue_no} สำเร็จ`)
         load()
       } else {
@@ -260,7 +262,10 @@ export default function QueueHistoryPage() {
                     <div className="qh-item-info">
                       <span className="qh-item-name">{q.queue_name || '—'}</span>
                       <span className="qh-item-meta">HN {q.hn || '—'} · {q.department || '—'}</span>
-                      {callTimeMap[q.vn] && <span className="qh-item-time">🕐 {callTimeMap[q.vn]} น.</span>}
+                    </div>
+                    <div className="qh-item-calltime">
+                      <span className="qh-calltime-label">เรียกเมื่อ</span>
+                      <span className="qh-calltime-val">{callTimeMap[q.vn] ? `${callTimeMap[q.vn]} น.` : '—'}</span>
                     </div>
                     <div className="qh-item-btns">
                       <button className="qh-btn qh-btn-recall" onClick={() => handleRecall(q)} disabled={!!actionId}>
@@ -318,7 +323,10 @@ export default function QueueHistoryPage() {
                     <div className="qh-item-info">
                       <span className="qh-item-name">{q.queue_name || '—'}</span>
                       <span className="qh-item-meta">HN {q.hn || '—'} · {q.department || '—'}</span>
-                      {callTimeMap[q.vn] && <span className="qh-item-time">🕐 {callTimeMap[q.vn]} น.</span>}
+                    </div>
+                    <div className="qh-item-calltime">
+                      <span className="qh-calltime-label">เรียกเมื่อ</span>
+                      <span className="qh-calltime-val">{callTimeMap[q.vn] ? `${callTimeMap[q.vn]} น.` : '—'}</span>
                     </div>
                     <div className="qh-item-btns">
                       <button className="qh-btn qh-btn-recall" onClick={() => handleRecall(q)} disabled={!!actionId}>
@@ -367,7 +375,10 @@ export default function QueueHistoryPage() {
                 <div className="qh-item-info">
                   <span className="qh-item-name">{q.queue_name || '—'}</span>
                   <span className="qh-item-meta">HN {q.hn || '—'} · {q.department || '—'}</span>
-                  {callTimeMap[q.vn] && <span className="qh-item-time">🕐 {callTimeMap[q.vn]} น.</span>}
+                </div>
+                <div className="qh-item-calltime">
+                  <span className="qh-calltime-label">เรียกเมื่อ</span>
+                  <span className="qh-calltime-val">{callTimeMap[q.vn] ? `${callTimeMap[q.vn]} น.` : '—'}</span>
                 </div>
                 <div className="qh-item-btns">
                   <div className="qh-badge done">✓ เสร็จแล้ว</div>

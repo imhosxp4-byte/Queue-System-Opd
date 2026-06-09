@@ -95,6 +95,19 @@ export async function callQueue(
   return fetchJSON('/queue/call', { method: 'POST', body: JSON.stringify({ identifier, servicePoint, mode, displayConfigId }) })
 }
 
+export function prewarmTTS(
+  queues: Array<{ no: string; name?: string }>,
+  servicePoint: string,
+  displayConfigId: string
+): void {
+  if (isElectron()) return
+  fetch('/api/tts/prewarm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ queues, servicePoint, displayConfigId }),
+  }).catch(() => {})
+}
+
 export async function updateQueueStatus(
   vn: string, status: string
 ): Promise<{ success: boolean }> {

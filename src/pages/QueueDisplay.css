@@ -1,3 +1,10 @@
+/* ─── Blink animation ────────────────────────────────────────── */
+@keyframes qd-blink-anim {
+  0%   { background-color: var(--qd-blink-color, #ffeb3b); }
+  50%  { background-color: var(--qd-queue-bg, #fff); }
+  100% { background-color: var(--qd-blink-color, #ffeb3b); }
+}
+
 /* ─── Root ───────────────────────────────────────────────────── */
 .qd-root {
   width: 100vw;

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getQueueList, callQueue, onQueueCalled, updateQueueStatus, getDisplayConfigs, getDisplayQDConfig } from '../lib/api'
+import { getQueueList, callQueue, onQueueCalled, updateQueueStatus, getDisplayConfigs, getDisplayQDConfig, getCallsToday, prewarmTTS } from '../lib/api'
 import './QueueMini.css'
 
 type QueueStatus = 'waiting' | 'calling' | 'done' | 'skip'
@@ -26,6 +26,9 @@ export default function QueueMiniPage() {
   const [deptMismatchWarning, setDeptMismatchWarning] = useState<{ queueNo: string; dept: string; displayName: string; px: number; py: number } | null>(null)
   const [qdFilterDepts, setQdFilterDepts] = useState<string[]>([])
   const callNextBtnRef = useRef<HTMLButtonElement>(null)
+  const lastCalledVnRef = useRef<string | null>(null)
+  const currentSpNameRef = useRef<string>('')
+  const selectedDisplayIdRef = useRef<string>('')
   const [mode, setMode] = useState<QueueMode>(() => (localStorage.getItem('qc_mode') as QueueMode) || 'slot')
   const [view, setView] = useState<View>('main')
   const manualRef = useRef<HTMLInputElement>(null)
@@ -72,15 +75,33 @@ export default function QueueMiniPage() {
 
   const loadQueues = useCallback(async () => {
     try {
-      const res = await getQueueList(mode)
+      const [res, calls] = await Promise.all([getQueueList(mode), getCallsToday(mode)])
       if (res.success) {
         const rows = res.data as QueueRow[]
         setQueues(rows)
+        // Pre-warm TTS for next waiting queues
+        const sp = currentSpNameRef.current
+        const did = selectedDisplayIdRef.current
+        if (sp && did) {
+          const waitingQueues = rows
+            .filter(r => !calls.find((c: { vn: string; status?: string }) => c.vn === r.vn) ||
+                         calls.find((c: { vn: string; status?: string }) => c.vn === r.vn)?.status === 'waiting')
+            .slice(0, 5)
+            .map(r => ({ no: String(r.queue_slot || r.queue_no || ''), name: r.queue_name || '' }))
+          if (waitingQueues.length) prewarmTTS(waitingQueues, sp, did)
+        }
         setCurrentCalled(prev => {
           if (prev) return prev
-          const calling = rows.find(r => r.status === 'calling')
-          if (!calling) return null
-          return { queueNo: calling.queue_slot || calling.queue_no || '', servicePoint: calling.service_point || '' }
+          const callingRows = rows.filter(r => r.status === 'calling')
+          if (callingRows.length === 0) return null
+          // Pick the most recently called queue by calledAt time
+          const latest = callingRows.reduce((best, r) => {
+            const t = calls.find((c: { vn: string; calledAt?: string }) => c.vn === r.vn)?.calledAt || ''
+            const bestT = calls.find((c: { vn: string; calledAt?: string }) => c.vn === best.vn)?.calledAt || ''
+            return t > bestT ? r : best
+          })
+          if (!lastCalledVnRef.current) lastCalledVnRef.current = latest.vn
+          return { queueNo: String(latest.queue_slot || latest.queue_no || ''), servicePoint: latest.service_point || '' }
         })
       }
     } catch {}
@@ -122,6 +143,10 @@ export default function QueueMiniPage() {
 
   useEffect(() => { loadDisplays() }, [loadDisplays])
   useEffect(() => { loadQueues() }, [loadQueues])
+  useEffect(() => {
+    currentSpNameRef.current = currentSpName
+    selectedDisplayIdRef.current = selectedDisplayId
+  }, [currentSpName, selectedDisplayId])
   useEffect(() => {
     const t = setInterval(loadQueues, 15000)
     return () => clearInterval(t)
@@ -171,8 +196,9 @@ export default function QueueMiniPage() {
     }
     setCallingId(queue.vn)
     try {
-      const res = await callQueue(queue.vn, currentSpName, mode)
+      const res = await callQueue(queue.vn, currentSpName, mode, selectedDisplayId || undefined)
       if (res.success) {
+        lastCalledVnRef.current = queue.vn
         const calledNo = res.queueNo || queue.queue_no
         setCurrentCalled({ queueNo: calledNo, servicePoint: currentSpName })
         if (!selectedDisplayId) {
@@ -212,8 +238,25 @@ export default function QueueMiniPage() {
   }
 
   const handleRecall = async () => {
-    const cur = queues.find(q => q.status === 'calling')
-    if (cur) handleCall(cur)
+    if (!currentCalled) return
+    // Use stored VN (most precise) or fall back to queueNo — server resolves both
+    const identifier = lastCalledVnRef.current ?? String(currentCalled.queueNo)
+    setCallingId('__recall__')
+    try {
+      const res = await callQueue(identifier, currentSpName, mode, selectedDisplayId || undefined)
+      if (res.success) {
+        const calledNo = res.queueNo ?? String(currentCalled.queueNo)
+        setCurrentCalled({ queueNo: calledNo, servicePoint: currentSpName })
+        flash(true, `เรียก ${calledNo} ซ้ำสำเร็จ`)
+        loadQueues()
+      } else {
+        flash(false, res.message || 'ไม่สำเร็จ')
+      }
+    } catch {
+      flash(false, 'เกิดข้อผิดพลาด')
+    } finally {
+      setCallingId(null)
+    }
   }
 
   const handleNoShow = async () => {
@@ -232,7 +275,7 @@ export default function QueueMiniPage() {
     if (!val) return
     setManualLoading(true)
     try {
-      const res = await callQueue(val, currentSpName, mode)
+      const res = await callQueue(val, currentSpName, mode, selectedDisplayId || undefined)
       if (res.success) {
         const calledNo = res.queueNo || val
         setCurrentCalled({ queueNo: calledNo, servicePoint: currentSpName })
@@ -471,7 +514,7 @@ export default function QueueMiniPage() {
               <kbd className="qm-kbd">F2</kbd>
             </button>
             <div className="qm-actions-row2">
-              <button className="qm-btn qm-btn-recall" onClick={handleRecall} disabled={!!callingId || !hasCalling}>
+              <button className="qm-btn qm-btn-recall" onClick={handleRecall} disabled={!!callingId || !currentCalled}>
                 <span>↻</span> เรียกซ้ำ <kbd className="qm-kbd">F3</kbd>
               </button>
               <button className="qm-btn qm-btn-noshow" onClick={handleNoShow} disabled={!!callingId || !hasCalling}>
