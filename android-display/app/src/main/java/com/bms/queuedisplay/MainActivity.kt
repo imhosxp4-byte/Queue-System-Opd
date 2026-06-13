@@ -246,9 +246,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        webView.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        webView.onResume()
+        hideSystemUI()
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) hideSystemUI()
+        // Delay prevents jarring flash when focus briefly changes (notifications, etc.)
+        if (hasFocus) handler.postDelayed({ hideSystemUI() }, 300)
     }
 
     @Deprecated("Deprecated in Java")

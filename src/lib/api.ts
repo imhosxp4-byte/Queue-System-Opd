@@ -24,12 +24,27 @@ const _statusListeners: Set<(data: { vn: string; status: string; queueNo?: strin
 const _audioListeners: Set<(data: { audioUrl: string; displayConfigId?: string | null }) => void> = new Set()
 const _clearListeners: Set<(data: { displayConfigId: string | null }) => void> = new Set()
 
+let _wsReconnectTimer: ReturnType<typeof setTimeout> | null = null
+let _wsPingInterval: ReturnType<typeof setInterval> | null = null
+
+function hasActiveListeners() {
+  return _wsListeners.size > 0 || _audioListeners.size > 0 ||
+    _configListeners.size > 0 || _statusListeners.size > 0 || _clearListeners.size > 0
+}
+
 function getWS(): WebSocket {
   // Reuse if already open OR still connecting — prevents duplicate connections
   if (_ws && (_ws.readyState === WebSocket.OPEN || _ws.readyState === WebSocket.CONNECTING)) return _ws
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const ws = new WebSocket(`${protocol}//${location.host}`)
   _ws = ws
+
+  // Heartbeat: send ping every 25s to prevent Android/router idle timeout (~30s)
+  if (_wsPingInterval) clearInterval(_wsPingInterval)
+  _wsPingInterval = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
+  }, 25000)
+
   ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data)
@@ -46,8 +61,20 @@ function getWS(): WebSocket {
       }
     } catch {}
   }
-  // Only clear _ws if this specific instance closes (prevents orphaned WS from clearing it)
-  ws.onclose = () => { if (_ws === ws) _ws = null }
+
+  ws.onclose = () => {
+    if (_wsPingInterval) { clearInterval(_wsPingInterval); _wsPingInterval = null }
+    if (_ws !== ws) return
+    _ws = null
+    // Auto-reconnect if any listener is still active
+    if (hasActiveListeners()) {
+      if (_wsReconnectTimer) clearTimeout(_wsReconnectTimer)
+      _wsReconnectTimer = setTimeout(() => { _wsReconnectTimer = null; getWS() }, 3000)
+    }
+  }
+
+  ws.onerror = () => ws.close()
+
   return ws
 }
 

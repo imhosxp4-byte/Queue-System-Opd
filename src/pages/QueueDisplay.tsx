@@ -457,13 +457,38 @@ export default function QueueDisplayPage() {
     return off
   }, [])
 
+  // Handle page visibility change — Android background/foreground & TV channel switch
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        // Discard stale audio queue when going to background / channel switch
+        audioQueue.current = []
+        if (currentAudioSrc.current) {
+          try { currentAudioSrc.current.stop() } catch {}
+          currentAudioSrc.current = null
+        }
+        audioPlaying.current = false
+        // Close AudioContext — will be recreated fresh on next play
+        if (audioCtx.current) {
+          audioCtx.current.close().catch(() => {})
+          audioCtx.current = null
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [])
+
   // Play audio URL via AudioContext — returns Promise that resolves when audio ends
   const playAudioUrl = (url: string, volume: number): Promise<void> => {
     return new Promise(async (resolve) => {
       let settled = false
       const done = () => { if (!settled) { settled = true; resolve() } }
       try {
-        if (!audioCtx.current) audioCtx.current = new AudioContext()
+        // Recreate AudioContext if closed or missing (Android kills it in background)
+        if (!audioCtx.current || audioCtx.current.state === 'closed') {
+          audioCtx.current = new AudioContext()
+        }
         if (audioCtx.current.state === 'suspended') await audioCtx.current.resume()
         const resp = await fetch(url)
         const buf = await resp.arrayBuffer()
