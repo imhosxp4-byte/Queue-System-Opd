@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0d1b2a"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp"
+        android:gravity="center_horizontal">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📺"
+            android:textSize="48sp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Queue Display"
+            android:textSize="22sp"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ตั้งค่าจอแสดงคิว"
+            android:textSize="13sp"
+            android:textColor="#78909C"
+            android:layout_marginBottom="32dp" />
+
+        <!-- Server URL -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="SERVER URL"
+            android:textSize="11sp"
+            android:textColor="#90A4AE"
+            android:layout_marginBottom="6dp" />
+
+        <EditText
+            android:id="@+id/etServerUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="http://192.168.1.100:3200"
+            android:textColor="#E0E6F0"
+            android:textColorHint="#546E7A"
+            android:background="@drawable/input_bg"
+            android:padding="14dp"
+            android:inputType="textUri"
+            android:textSize="15sp"
+            android:layout_marginBottom="10dp"
+            android:singleLine="true" />
+
+        <Button
+            android:id="@+id/btnFetch"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="ดึงรายการจอแสดงผล"
+            android:backgroundTint="#1e3a5f"
+            android:textColor="#90A4AE"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#40C4FF"
+            android:textSize="13sp"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Display selector -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="เลือกจอแสดงผล"
+            android:textSize="11sp"
+            android:textColor="#90A4AE"
+            android:layout_marginBottom="6dp" />
+
+        <Spinner
+            android:id="@+id/spinnerDisplay"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:background="@drawable/input_bg"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/tvInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#78909C"
+            android:textSize="13sp"
+            android:layout_marginBottom="28dp" />
+
+        <Button
+            android:id="@+id/btnOpen"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:text="เปิดจอแสดงคิว"
+            android:backgroundTint="#0288D1"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:enabled="false" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="กด Back เพื่อกลับหน้านี้ได้ทุกเมื่อ"
+            android:textColor="#546E7A"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="24dp" />
+
+    </LinearLayout>
+</ScrollView>

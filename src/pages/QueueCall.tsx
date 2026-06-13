@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   getQueueList, callQueue, onQueueCalled, updateQueueStatus,
-  getServicePoints, getDisplayConfigs, getDisplayQDConfig, clearDisplayQueues, getCallsToday, prewarmTTS
+  getServicePoints, getDisplayConfigs, getDisplayQDConfig, clearDisplayQueues, getCallsToday, prewarmTTS, getLabXray, type LabXrayStatus
 } from '../lib/api'
 import './QueueCall.css'
 
@@ -73,8 +73,10 @@ export default function QueueCallPage() {
   const [lockedVn, setLockedVn] = useState<string | null>(null)
   const [showShortcutHelp, setShowShortcutHelp] = useState(false)
 
+  const [labXrayMap, setLabXrayMap] = useState<Record<string, LabXrayStatus>>({})
   const lastCalledVnRef = useRef<string | null>(null)
   const prewarmCtxRef = useRef<{ spName: string; displayId: string }>({ spName: '', displayId: '' })
+  const isLoadingQueues = useRef(false)
   const settingsRef = useRef<HTMLDivElement>(null)
   const quickCallRef = useRef<HTMLInputElement>(null)
   const deptMenuRef = useRef<HTMLDivElement>(null)
@@ -113,37 +115,49 @@ export default function QueueCallPage() {
   useEffect(() => { getDisplayConfigs().then(setDisplayConfigs) }, [])
 
   const loadQueues = useCallback(async () => {
+    if (isLoadingQueues.current) return // prevent concurrent loads
+    isLoadingQueues.current = true
+    // Restore from sessionStorage cache so the table shows immediately while fetching
+    try {
+      const cached = sessionStorage.getItem(`qc_queue_cache_${mode}`)
+      if (cached) {
+        const { rows: cachedRows } = JSON.parse(cached) as { rows: QueueRow[] }
+        setQueues(prev => prev.length === 0 ? cachedRows : prev)
+      }
+    } catch {}
     setLoading(true)
-    const [res, calls] = await Promise.all([getQueueList(mode), getCallsToday(mode)])
-    setLoading(false)
-    if (res.success) {
-      const rows = res.data as QueueRow[]
-      setQueues(rows)
-      // build vn → calledAt map from today's calls (merge so locally-set times don't flicker)
-      const map: Record<string, string> = {}
-      calls.forEach(c => { if (c.vn && c.calledAt) map[c.vn] = c.calledAt })
-      setCallTimeMap(prev => ({ ...prev, ...map }))
-      // restore currentCalled — pick the MOST RECENTLY called (by calledAt) queue on reload
-      setCurrentCalled(prev => {
-        if (prev) return prev
-        const callingRows = rows.filter(r => r.status === 'calling')
-        if (callingRows.length === 0) return null
-        const latest = callingRows.reduce((best, r) => {
-          const t = calls.find(c => c.vn === r.vn)?.calledAt || ''
-          const bestT = calls.find(c => c.vn === best.vn)?.calledAt || ''
-          return t > bestT ? r : best
+    try {
+      const [res, calls] = await Promise.all([getQueueList(mode), getCallsToday(mode)])
+      if (res.success) {
+        const rows = res.data as QueueRow[]
+        setQueues(rows)
+        try { sessionStorage.setItem(`qc_queue_cache_${mode}`, JSON.stringify({ rows })) } catch {}
+        const map: Record<string, string> = {}
+        calls.forEach(c => { if (c.vn && c.calledAt) map[c.vn] = c.calledAt })
+        setCallTimeMap(prev => ({ ...prev, ...map }))
+        setCurrentCalled(prev => {
+          if (prev) return prev
+          const callingRows = rows.filter(r => r.status === 'calling')
+          if (callingRows.length === 0) return null
+          const latest = callingRows.reduce((best, r) => {
+            const t = calls.find(c => c.vn === r.vn)?.calledAt || ''
+            const bestT = calls.find(c => c.vn === best.vn)?.calledAt || ''
+            return t > bestT ? r : best
+          })
+          const queueNo = String(latest.queue_slot || latest.queue_no || '')
+          const callEntry = calls.find(c => c.vn === latest.vn)
+          if (!lastCalledVnRef.current) lastCalledVnRef.current = latest.vn
+          return { queueNo, servicePoint: latest.service_point || '', calledAt: callEntry?.calledAt }
         })
-        const queueNo = String(latest.queue_slot || latest.queue_no || '')
-        const callEntry = calls.find(c => c.vn === latest.vn)
-        if (!lastCalledVnRef.current) lastCalledVnRef.current = latest.vn
-        return { queueNo, servicePoint: latest.service_point || '', calledAt: callEntry?.calledAt }
-      })
+      }
+    } finally {
+      setLoading(false)
+      isLoadingQueues.current = false
     }
   }, [mode])
 
   useEffect(() => {
-    setQueues([])
-    // First mount: keep filterDepts restored from prefs; subsequent mode changes: clear
+    // Don't clear queues on mode change — show previous data while loading to avoid blank screen
     if (isModeFirstMount.current) {
       isModeFirstMount.current = false
     } else {
@@ -158,9 +172,19 @@ export default function QueueCallPage() {
     return () => clearInterval(t)
   }, [loadQueues])
 
+  // Load lab/xray status in background — slow query, refresh every 30s
+  useEffect(() => {
+    let cancelled = false
+    const load = () => getLabXray().then(d => { if (!cancelled) setLabXrayMap(d) })
+    load()
+    const t = setInterval(load, 30000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [])
+
   useEffect(() => {
     const off = onQueueCalled((data) => {
       setCurrentCalled(data)
+      isLoadingQueues.current = false // allow WebSocket-triggered reload to proceed
       loadQueues()
     })
     return off
@@ -279,20 +303,8 @@ export default function QueueCallPage() {
   }
 
   const doCall = async (queue: QueueRow) => {
-    // ดึง filterDepts ล่าสุดจาก qd-config ทุกครั้งก่อนเรียก (ป้องกัน state ค้าง)
-    let activeFilter = qdFilterDepts
-    if (selectedDisplayId) {
-      try {
-        const cfg = await getDisplayQDConfig(selectedDisplayId)
-        const depts = cfg?.filterDepts
-        if (Array.isArray(depts)) {
-          activeFilter = depts as string[]
-          setQdFilterDepts(activeFilter)
-        }
-      } catch {}
-    }
-    // ตรวจว่าจอที่เลือกกรองแผนก และแผนกคนไข้ไม่ตรง → ห้ามเรียก
-    if (activeFilter.length > 0 && queue.department && !activeFilter.includes(queue.department)) {
+    // ตรวจว่าจอที่เลือกกรองแผนก และแผนกคนไข้ไม่ตรง → ห้ามเรียก (ใช้ state ที่ sync แล้ว)
+    if (qdFilterDepts.length > 0 && queue.department && !qdFilterDepts.includes(queue.department)) {
       const selDisplay = displayConfigs.find(d => d.id === selectedDisplayId)
       const r = callNextBtnRef.current?.getBoundingClientRect()
       setDeptMismatchWarning({
@@ -314,12 +326,13 @@ export default function QueueCallPage() {
         const calledAt = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
         setCurrentCalled({ queueNo: calledNo, servicePoint: currentSpName, calledAt })
         setCallTimeMap(prev => ({ ...prev, [queue.vn]: calledAt }))
+        // Optimistic update — status changes immediately, WebSocket queue:called will trigger full reload
+        setQueues(prev => prev.map(q => q.vn === queue.vn ? { ...q, status: 'calling' as QueueStatus, service_point: currentSpName } : q))
         if (!selectedDisplayId) {
           const r = callNextBtnRef.current?.getBoundingClientRect()
           setCheckDisplayPopup({ queueNo: calledNo, sp: currentSpName, px: r ? r.right + 12 : 320, py: r ? r.top + r.height / 2 : 200 })
           setTimeout(() => setCheckDisplayPopup(null), 4000)
         }
-        loadQueues()
       } else {
         setQuickCallMsg({ ok: false, text: res.message || 'เรียกคิวไม่สำเร็จ' })
         setTimeout(() => setQuickCallMsg(null), 3000)
@@ -882,7 +895,8 @@ export default function QueueCallPage() {
           </div>
 
           <div className="qc-table-wrap">
-            {loading && queues.length === 0 ? (
+            {loading && <div className="qc-progress-bar"><div className="qc-progress-bar-inner" /></div>}
+            {queues.length === 0 && loading ? (
               <div className="qc-empty"><div className="qc-loader" /><p>กำลังโหลด...</p></div>
             ) : filteredQueues.length === 0 ? (
               <div className="qc-empty">
@@ -896,6 +910,8 @@ export default function QueueCallPage() {
               <table className="qc-table">
                 <thead><tr>
                   <th>วันที่</th>
+                  <th className="qc-th-lab">Lab</th>
+                  <th className="qc-th-lab">X-ray</th>
                   {(mode === 'slot' || mode === 'slot_cur') && <th>Queue Dep</th>}
                   <th>{(mode === 'slot' || mode === 'slot_cur') ? 'oqueue' : 'คิว'}</th>
                   <th>HN</th>
@@ -934,6 +950,55 @@ export default function QueueCallPage() {
                       <td className="qc-td-date">
                         <div>{q.vstdate ? String(q.vstdate).substring(0, 10) : '—'}</div>
                         {q.vsttime && <div className="qc-td-time">{String(q.vsttime).substring(0, 5)}</div>}
+                      </td>
+                      <td className="qc-td-lab">
+                        {(() => { const lx = labXrayMap[q.vn]
+                          if (!lx) return null
+                          const { confirm_report, lab_receive } = lx
+                          if (confirm_report === 'Y') return (
+                            <span className="lab-icon lab-icon-ready" title="ผล Lab ออกแล้ว">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 3h6v7l3 5H6l3-5V3z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M6 18h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/><circle cx="10" cy="15" r="1" fill="currentColor"/><circle cx="14" cy="13" r="1" fill="currentColor"/></svg>
+                              <span className="lab-icon-label">ผลออก</span>
+                            </span>
+                          )
+                          if (lab_receive === 'Y') return (
+                            <span className="lab-icon lab-icon-received" title="ห้อง Lab รับแล้ว">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 3h6v7l3 5H6l3-5V3z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M6 18h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+                              <span className="lab-icon-label">รับแล้ว</span>
+                            </span>
+                          )
+                          return (
+                            <span className="lab-icon lab-icon-ordered" title="สั่ง Lab แล้ว">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 3h6v7l3 5H6l3-5V3z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M6 18h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+                              <span className="lab-icon-label">สั่ง</span>
+                            </span>
+                          )
+                        })()}
+                      </td>
+                      <td className="qc-td-lab">
+                        {(() => { const lx = labXrayMap[q.vn]
+                          if (!lx) return null
+                          const { xray_confirm, xray_confirm_radiology } = lx
+                          if (xray_confirm_radiology === 'Y') return (
+                            <span className="lab-icon xray-icon-taken" title="ถ่ายภาพแล้ว">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" strokeWidth="1.8"/><circle cx="12" cy="12" r="3.5" stroke="currentColor" strokeWidth="1.8"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>
+                              <span className="lab-icon-label">ถ่ายแล้ว</span>
+                            </span>
+                          )
+                          if (xray_confirm === 'Y') return (
+                            <span className="lab-icon xray-icon-received" title="รับรายการ X-ray แล้ว">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" strokeWidth="1.8"/><circle cx="12" cy="12" r="3.5" stroke="currentColor" strokeWidth="1.8"/></svg>
+                              <span className="lab-icon-label">รับแล้ว</span>
+                            </span>
+                          )
+                          if (!xray_confirm && !xray_confirm_radiology) return null
+                          return (
+                            <span className="lab-icon xray-icon-ordered" title="สั่ง X-ray แล้ว">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" strokeWidth="1.8"/><line x1="8" y1="9" x2="16" y2="15" stroke="currentColor" strokeWidth="1.5"/><line x1="16" y1="9" x2="8" y2="15" stroke="currentColor" strokeWidth="1.5"/></svg>
+                              <span className="lab-icon-label">สั่ง</span>
+                            </span>
+                          )
+                        })()}
                       </td>
                       {(mode === 'slot' || mode === 'slot_cur') && <td className="qc-td-center"><span className="qc-slot-pill">{q.queue_slot ?? '—'}</span></td>}
                       <td className="qc-td-center"><span className="qc-qno-pill">{q.queue_no || '—'}</span></td>

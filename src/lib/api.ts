@@ -108,6 +108,21 @@ export function prewarmTTS(
   }).catch(() => {})
 }
 
+export interface LabXrayStatus {
+  lab_receive?: string | null
+  confirm_report?: string | null
+  xray_confirm?: string | null
+  xray_confirm_radiology?: string | null
+}
+
+export async function getLabXray(): Promise<Record<string, LabXrayStatus>> {
+  if (isElectron()) return {}
+  try {
+    const res = await fetchJSON('/queue/lab-xray') as { success: boolean; data: Record<string, LabXrayStatus> }
+    return res.success ? res.data : {}
+  } catch { return {} }
+}
+
 export async function updateQueueStatus(
   vn: string, status: string
 ): Promise<{ success: boolean }> {

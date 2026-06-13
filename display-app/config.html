@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Queue Display — ตั้งค่า</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0 }
+    body {
+      font-family: 'Segoe UI', 'Sarabun', sans-serif;
+      background: #0d1b2a;
+      color: #e0e6f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: #162032;
+      border: 1px solid #1e3a5f;
+      border-radius: 12px;
+      padding: 32px 28px;
+      width: 100%;
+      max-width: 460px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .logo-icon {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, #0288d1, #00bcd4);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+    h1 { font-size: 18px; font-weight: 700; color: #fff }
+    h1 span { font-size: 12px; font-weight: 400; color: #78909c; display: block; margin-top: 2px }
+
+    .section { margin-bottom: 20px }
+    label {
+      font-size: 12px;
+      color: #90a4ae;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 6px;
+    }
+    input, select {
+      width: 100%;
+      padding: 10px 12px;
+      background: #0d1b2a;
+      border: 1px solid #1e3a5f;
+      border-radius: 8px;
+      color: #e0e6f0;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus, select:focus { border-color: #0288d1 }
+    input::placeholder { color: #546e7a }
+    select option { background: #162032 }
+
+    .row { display: flex; gap: 8px }
+    .row input { flex: 1 }
+
+    .btn {
+      width: 100%;
+      padding: 11px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.98) }
+    .btn-primary {
+      background: linear-gradient(135deg, #0288d1, #0097a7);
+      color: #fff;
+    }
+    .btn-ghost {
+      background: #1e3a5f;
+      color: #90a4ae;
+      margin-bottom: 8px;
+    }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed }
+
+    .status {
+      font-size: 12px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin-top: 8px;
+      display: none;
+    }
+    .status.ok { background: rgba(0,188,100,0.15); color: #00e676; display: block }
+    .status.err { background: rgba(239,83,80,0.15); color: #ff5252; display: block }
+    .status.loading { background: rgba(2,136,209,0.15); color: #40c4ff; display: block }
+
+    .display-info {
+      background: rgba(2,136,209,0.1);
+      border: 1px solid rgba(2,136,209,0.3);
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 10px;
+      font-size: 13px;
+      display: none;
+    }
+    .display-info.show { display: block }
+    .display-info strong { color: #40c4ff }
+    .channels { margin-top: 4px; color: #78909c; font-size: 12px }
+
+    .divider { border: none; border-top: 1px solid #1e3a5f; margin: 20px 0 }
+    .hint { font-size: 11px; color: #546e7a; margin-top: 5px }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <div class="logo-icon">📺</div>
+      <h1>Queue Display
+        <span>ตั้งค่าจอแสดงคิว</span>
+      </h1>
+    </div>
+
+    <!-- Server URL -->
+    <div class="section">
+      <label>Server URL</label>
+      <div class="row">
+        <input id="serverUrl" type="text" placeholder="http://192.168.1.100:3200" />
+        <button class="btn btn-ghost" id="btnFetch" style="width:90px;margin:0" onclick="fetchDisplays()">ดึงรายการ</button>
+      </div>
+      <p class="hint">IP ของเครื่องที่รัน Queue OPD Server</p>
+      <div id="fetchStatus" class="status"></div>
+    </div>
+
+    <!-- Display selector -->
+    <div class="section">
+      <label>เลือกจอแสดงผล</label>
+      <select id="displaySelect" onchange="onSelectDisplay()">
+        <option value="">— กด "ดึงรายการ" ก่อน —</option>
+      </select>
+      <div id="displayInfo" class="display-info">
+        <strong id="infoName"></strong>
+        <div class="channels" id="infoChannels"></div>
+      </div>
+    </div>
+
+    <hr class="divider" />
+
+    <button class="btn btn-primary" id="btnOpen" onclick="openDisplay()" disabled>
+      📺 เปิดจอแสดงคิว
+    </button>
+    <p class="hint" style="text-align:center;margin-top:8px">กด ESC เพื่อกลับมาตั้งค่า | คลิกขวา tray icon เพื่อออกโปรแกรม</p>
+  </div>
+
+  <script>
+    let displays = []
+
+    async function init() {
+      if (!window.electronAPI) return
+      const cfg = await window.electronAPI.getConfig()
+      if (cfg) {
+        document.getElementById('serverUrl').value = cfg.serverUrl || ''
+        if (cfg.serverUrl) await fetchDisplays(cfg.displayId)
+      }
+    }
+
+    async function fetchDisplays(preselect) {
+      const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/, '')
+      if (!serverUrl) { showStatus('fetchStatus', 'err', 'กรุณากรอก Server URL ก่อน'); return }
+
+      showStatus('fetchStatus', 'loading', 'กำลังดึงข้อมูล...')
+      document.getElementById('btnFetch').disabled = true
+
+      try {
+        const res = await fetch(`${serverUrl}/api/display/configs`)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        displays = await res.json()
+
+        const sel = document.getElementById('displaySelect')
+        sel.innerHTML = '<option value="">— เลือกจอแสดงผล —</option>'
+        displays.forEach(d => {
+          const opt = document.createElement('option')
+          opt.value = d.id
+          opt.textContent = d.name
+          sel.appendChild(opt)
+        })
+
+        if (preselect) {
+          sel.value = preselect
+          onSelectDisplay()
+        }
+
+        showStatus('fetchStatus', 'ok', `พบ ${displays.length} จอแสดงผล`)
+        document.getElementById('btnOpen').disabled = !preselect
+      } catch (e) {
+        showStatus('fetchStatus', 'err', `เชื่อมต่อไม่ได้: ${e.message}`)
+        displays = []
+      } finally {
+        document.getElementById('btnFetch').disabled = false
+      }
+    }
+
+    function onSelectDisplay() {
+      const id = document.getElementById('displaySelect').value
+      const d = displays.find(x => x.id === id)
+      const info = document.getElementById('displayInfo')
+      document.getElementById('btnOpen').disabled = !id
+
+      if (d) {
+        document.getElementById('infoName').textContent = d.name
+        const ch = d.channels || []
+        document.getElementById('infoChannels').textContent =
+          ch.length > 0 ? `ช่องบริการ: ${ch.join(', ')}` : 'ทุกช่องบริการ'
+        info.classList.add('show')
+      } else {
+        info.classList.remove('show')
+      }
+    }
+
+    async function openDisplay() {
+      const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/, '')
+      const id = document.getElementById('displaySelect').value
+      const d = displays.find(x => x.id === id)
+      if (!serverUrl || !id) return
+
+      document.getElementById('btnOpen').disabled = true
+      document.getElementById('btnOpen').textContent = 'กำลังเปิด...'
+
+      await window.electronAPI.openDisplay({
+        serverUrl,
+        displayId: id,
+        displayName: d ? d.name : id,
+      })
+    }
+
+    function showStatus(id, type, msg) {
+      const el = document.getElementById(id)
+      el.className = `status ${type}`
+      el.textContent = msg
+    }
+
+    // Enter key on server URL → fetch
+    document.getElementById('serverUrl').addEventListener('keydown', e => {
+      if (e.key === 'Enter') fetchDisplays()
+    })
+
+    init()
+  </script>
+</body>
+</html>

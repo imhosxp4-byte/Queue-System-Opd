@@ -23,6 +23,10 @@ interface QueueItem {
   vsttime: string
   service_point: string
   status: string
+  lab_receive?: string | null
+  confirm_report?: string | null
+  xray_confirm?: string | null
+  xray_confirm_radiology?: string | null
 }
 
 interface ServicePoint {

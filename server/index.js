@@ -151,15 +151,30 @@ function saveDisplayConfigs(configs) {
 
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 
-async function getConnection(settings) {
+let _mysqlPool = null
+let _poolSettings = null
+
+function getMysqlPool(settings) {
+  const key = `${settings.host}:${settings.port}:${settings.database}:${settings.username}`
+  if (_mysqlPool && _poolSettings === key) return _mysqlPool
+  if (_mysqlPool) { _mysqlPool.end().catch(() => {}) }
+  _mysqlPool = mysql.createPool({
+    host: settings.host, port: settings.port,
+    database: settings.database, user: settings.username,
+    password: settings.password,
+    waitForConnections: true, connectionLimit: 5, queueLimit: 0,
+    connectTimeout: 5000
+  })
+  _poolSettings = key
+  return _mysqlPool
+}
+
+async function queryDB(settings, sql, sqlPg, params) {
   if (!settings) throw new Error('ยังไม่ได้ตั้งค่าการเชื่อมต่อ')
   if (settings.type === 'mysql') {
-    const conn = await mysql.createConnection({
-      host: settings.host, port: settings.port,
-      database: settings.database, user: settings.username,
-      password: settings.password, connectTimeout: 5000
-    })
-    return { type: 'mysql', conn }
+    const pool = getMysqlPool(settings)
+    const [rows] = await pool.execute(sql, params)
+    return rows
   }
   const client = new PgClient({
     host: settings.host, port: settings.port,
@@ -167,23 +182,11 @@ async function getConnection(settings) {
     password: settings.password, connectionTimeoutMillis: 5000
   })
   await client.connect()
-  return { type: 'pg', conn: client }
-}
-
-async function queryDB(settings, sql, sqlPg, params) {
-  const { type, conn } = await getConnection(settings)
   try {
-    if (type === 'mysql') {
-      const [rows] = await conn.execute(sql, params)
-      await conn.end()
-      return rows
-    }
-    const res = await conn.query(sqlPg, params)
-    await conn.end()
+    const res = await client.query(sqlPg, params)
     return res.rows
-  } catch (e) {
-    try { await conn.end() } catch {}
-    throw e
+  } finally {
+    await client.end()
   }
 }
 
@@ -657,6 +660,26 @@ function toLocalDateStr(val) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// ─── Lab / X-ray status SQL (loaded separately after queue list) ─────────────
+
+const LAB_XRAY_SQL_MYSQL = `
+SELECT ov.vn,
+    (SELECT MAX(lab_receive) FROM lab_head WHERE vn = ov.vn) AS lab_receive,
+    (SELECT MAX(confirm_report) FROM lab_head WHERE vn = ov.vn) AS confirm_report,
+    (SELECT MAX(confirm) FROM xray_report WHERE vn = ov.vn) AS xray_confirm,
+    (SELECT MAX(confirm_radiology) FROM xray_report WHERE vn = ov.vn) AS xray_confirm_radiology
+FROM ovst ov
+WHERE ov.vstdate = ?`
+
+const LAB_XRAY_SQL_PG = `
+SELECT ov.vn,
+    (SELECT MAX(lab_receive) FROM lab_head WHERE vn = ov.vn) AS lab_receive,
+    (SELECT MAX(confirm_report) FROM lab_head WHERE vn = ov.vn) AS confirm_report,
+    (SELECT MAX(confirm) FROM xray_report WHERE vn = ov.vn) AS xray_confirm,
+    (SELECT MAX(confirm_radiology) FROM xray_report WHERE vn = ov.vn) AS xray_confirm_radiology
+FROM ovst ov
+WHERE ov.vstdate = $1`
+
 // ─── API: Queue ───────────────────────────────────────────────────────────────
 
 app.get('/api/queue/list', async (req, res) => {
@@ -690,6 +713,31 @@ app.get('/api/queue/list', async (req, res) => {
     res.json({ success: true, data })
   } catch (e) {
     res.json({ success: false, data: [], message: e.message })
+  }
+})
+
+// Lab & X-ray status — separate slow endpoint, loaded in background after queue list
+app.get('/api/queue/lab-xray', async (req, res) => {
+  const settings = loadSettings()
+  if (!settings) return res.json({ success: false, data: {} })
+  try {
+    const today = getTodayDate()
+    const rows = await queryDB(settings, LAB_XRAY_SQL_MYSQL, LAB_XRAY_SQL_PG, [today])
+    // Return as { vn: { lab_receive, confirm_report, xray_confirm, xray_confirm_radiology } }
+    const data = {}
+    for (const r of rows) {
+      if (r.lab_receive || r.confirm_report || r.xray_confirm || r.xray_confirm_radiology) {
+        data[r.vn] = {
+          lab_receive: r.lab_receive || null,
+          confirm_report: r.confirm_report || null,
+          xray_confirm: r.xray_confirm || null,
+          xray_confirm_radiology: r.xray_confirm_radiology || null,
+        }
+      }
+    }
+    res.json({ success: true, data })
+  } catch (e) {
+    res.json({ success: false, data: {}, message: e.message })
   }
 })
 

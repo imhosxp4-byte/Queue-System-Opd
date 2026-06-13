@@ -235,6 +235,7 @@ export default function QueueDisplayPage() {
   const audioCtx = useRef<AudioContext | null>(null)
   const audioQueue = useRef<Array<{ url: string; volume: number }>>([])
   const audioPlaying = useRef(false)
+  const currentAudioSrc = useRef<AudioBufferSourceNode | null>(null)
   const serverTtsFallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const browserTtsPlayedForCall = useRef(false)
   const isResizing = useRef(false)
@@ -473,7 +474,8 @@ export default function QueueDisplayPage() {
         src.buffer = decoded
         src.connect(gain)
         gain.connect(audioCtx.current.destination)
-        src.onended = done
+        currentAudioSrc.current = src
+        src.onended = () => { currentAudioSrc.current = null; done() }
         src.start()
         // Safety: resolve after audio duration + 2s in case onended doesn't fire
         setTimeout(done, (decoded.duration * 1000) + 2000)
@@ -516,6 +518,13 @@ export default function QueueDisplayPage() {
         return
       }
       browserTtsPlayedForCall.current = false
+      // Stop current audio + discard queue — new announcement plays immediately
+      audioQueue.current = []
+      if (currentAudioSrc.current) {
+        try { currentAudioSrc.current.stop() } catch {}
+        currentAudioSrc.current = null
+      }
+      audioPlaying.current = false
       enqueueAudio(data.audioUrl, cfg.ttsVolume ?? 1)
     })
     return off

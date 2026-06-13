@@ -1,0 +1,46 @@
+{
+  "name": "queue-display",
+  "version": "1.0.0",
+  "description": "Queue Display Screen",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.0.0"
+  },
+  "build": {
+    "appId": "com.bms.queue-display",
+    "productName": "Queue Display",
+    "copyright": "BMS",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Queue Display",
+      "uninstallDisplayName": "Queue Display",
+      "runAfterFinish": true,
+      "perMachine": true
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "config.html"
+    ]
+  }
+}

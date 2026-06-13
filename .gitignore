@@ -8,3 +8,21 @@ dist-electron/
 data/db-settings.json
 data/tts-cache/
 data/qd-config-*.json
+
+# Installer binaries
+release/
+ตัวติดตั้ง/
+
+# Logs
+server-err.log
+server-out.log
+
+# display-app build artifacts
+display-app/node_modules/
+display-app/release/
+
+# android-display build artifacts
+android-display/.gradle/
+android-display/app/build/
+android-display/build/
+android-display/local.properties
