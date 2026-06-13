@@ -1,8 +1,7 @@
-/* ─── Blink animation ────────────────────────────────────────── */
+/* ─── Blink animation — colors injected by React for Android WebView compat ── */
 @keyframes qd-blink-anim {
-  0%   { background-color: var(--qd-blink-color, #ffeb3b); }
-  50%  { background-color: var(--qd-queue-bg, #fff); }
-  100% { background-color: var(--qd-blink-color, #ffeb3b); }
+  0%, 100% { background-color: #ffeb3b; }
+  50%       { background-color: #ffffff; }
 }
 
 /* ─── Root ───────────────────────────────────────────────────── */

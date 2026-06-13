@@ -235,6 +235,7 @@ export default function QueueDisplayPage() {
   const audioCtx = useRef<AudioContext | null>(null)
   const audioQueue = useRef<Array<{ url: string; volume: number }>>([])
   const audioPlaying = useRef(false)
+  const audioGeneration = useRef(0)
   const currentAudioSrc = useRef<AudioBufferSourceNode | null>(null)
   const serverTtsFallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const browserTtsPlayedForCall = useRef(false)
@@ -461,7 +462,8 @@ export default function QueueDisplayPage() {
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
-        // Discard stale audio queue when going to background / channel switch
+        // Invalidate all in-flight drain sessions + discard stale audio
+        audioGeneration.current++
         audioQueue.current = []
         if (currentAudioSrc.current) {
           try { currentAudioSrc.current.stop() } catch {}
@@ -511,22 +513,25 @@ export default function QueueDisplayPage() {
     })
   }
 
-  // Drain audio queue sequentially — prevents sound overlap
-  const drainAudioQueue = async () => {
+  // Drain audio queue sequentially — generation prevents stale async sessions from
+  // resetting audioPlaying after a newer session has taken over
+  const drainAudioQueue = async (gen: number) => {
     if (audioPlaying.current) return
     audioPlaying.current = true
-    while (audioQueue.current.length > 0) {
+    while (audioQueue.current.length > 0 && gen === audioGeneration.current) {
       const item = audioQueue.current.shift()!
       await playAudioUrl(item.url, item.volume)
-      // Brief gap between announcements — sounds more natural
-      if (audioQueue.current.length > 0) await new Promise(r => setTimeout(r, 600))
+      if (audioQueue.current.length > 0 && gen === audioGeneration.current) {
+        await new Promise(r => setTimeout(r, 600))
+      }
     }
-    audioPlaying.current = false
+    // Only release lock if we are still the current session
+    if (gen === audioGeneration.current) audioPlaying.current = false
   }
 
   const enqueueAudio = (url: string, volume: number) => {
     audioQueue.current.push({ url, volume })
-    drainAudioQueue()
+    drainAudioQueue(audioGeneration.current)
   }
 
   // WebSocket: async TTS audio ready — enqueue to prevent overlap
@@ -537,13 +542,13 @@ export default function QueueDisplayPage() {
       if (cfg.filterDepts.length > 0 && (data as any).department && !cfg.filterDepts.includes((data as any).department)) return
       if (serverTtsFallbackTimer.current) { clearTimeout(serverTtsFallbackTimer.current); serverTtsFallbackTimer.current = null }
       // Skip server TTS only if browser TTS is actively speaking — prevents double announcement
-      // If browser TTS fired but failed silently (speaking=false), still play server TTS
       if (browserTtsPlayedForCall.current && window.speechSynthesis?.speaking) {
         browserTtsPlayedForCall.current = false
         return
       }
       browserTtsPlayedForCall.current = false
-      // Stop current audio + discard queue — new announcement plays immediately
+      // Invalidate all old drain sessions + discard queue — new announcement plays immediately
+      audioGeneration.current++
       audioQueue.current = []
       if (currentAudioSrc.current) {
         try { currentAudioSrc.current.stop() } catch {}
@@ -804,6 +809,8 @@ export default function QueueDisplayPage() {
 
   return (
     <div className="qd-root" style={{ fontFamily: fontFace }}>
+      {/* Inject actual blink colors — var() in @keyframes not supported on Android WebView */}
+      <style>{`@keyframes qd-blink-anim { 0%,100%{background-color:${config.blinkColor};} 50%{background-color:${config.queueBg};} }`}</style>
 
       {/* ─── HEADER ──────────────────────────────────────────── */}
       <header className="qd-header" style={{ background: config.headerBg, color: config.headerTextColor }}>
