@@ -1,5 +1,6 @@
 import { HashRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import NavBar from './components/NavBar'
+import QueueMiniPage from './pages/QueueMini'
 import LoginPage from './pages/Login'
 import ConnectionSettingsPage from './pages/ConnectionSettings'
 import MainPage from './pages/Main'
@@ -8,7 +9,6 @@ import QueueDisplayPage from './pages/QueueDisplay'
 import DisplayConfigsPage from './pages/DisplayConfigs'
 import QueueHistoryPage from './pages/QueueHistory'
 import AppSettingsPage from './pages/AppSettings'
-import QueueMiniPage from './pages/QueueMini'
 
 function AppLayout() {
   return (

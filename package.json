@@ -1,6 +1,6 @@
 {
   "name": "queue-opd",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "Queue Management System for OPD",
   "main": "out/main/main.js",
   "scripts": {

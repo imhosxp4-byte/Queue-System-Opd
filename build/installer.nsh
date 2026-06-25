@@ -1,5 +1,15 @@
 ; Custom NSIS installer — fully offline, bundles all TTS voices
 
+; Kill running instance silently before installer UI checks for it
+!macro customInit
+  ; Kill Electron app
+  nsExec::Exec 'taskkill /F /IM "Queue-System-Opd.exe" /T'
+  ; Kill any process still holding port 3200 (node.exe may outlive Electron on some systems)
+  nsExec::Exec 'powershell -NoProfile -NonInteractive -Command "Stop-Process -Id (Get-NetTCPConnection -LocalPort 3200 -EA SilentlyContinue).OwningProcess -Force -EA SilentlyContinue"'
+  ; Give OS time to release port before new version starts
+  Sleep 1500
+!macroend
+
 !macro customInstall
 
   ; ════════════════════════════════════════════════════════════════
@@ -59,6 +69,32 @@
     WriteRegStr HKLM "SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_thTH_Pattara\Attributes" "Version" "11.0"
 
   skip_pattara:
+
+  ; Register Pattara in SAPI5 registry so System.Speech.Synthesis (PowerShell) can find it.
+  ; Done unconditionally — safe if already present, required for SAPI fallback TTS to use Thai voice.
+  WriteRegStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara" "" "Microsoft Pattara - Thai (Thailand)"
+  WriteRegStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara" "41E" "Microsoft Pattara - Thai (Thailand)"
+  WriteRegStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara" "CLSID" "{179F3D56-1B0B-42B2-A962-59B7EF59FE1B}"
+  WriteRegExpandStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara" "LangDataPath" "%windir%\Speech_OneCore\Engines\TTS\th-TH\MSTTSLocThTH.dat"
+  WriteRegExpandStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara" "VoicePath" "%windir%\Speech_OneCore\Engines\TTS\th-TH\M1054Pattara"
+  WriteRegStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara\Attributes" "Age" "Adult"
+  WriteRegStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara\Attributes" "DataVersion" "11.0.2016.1016"
+  WriteRegStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara\Attributes" "Gender" "Male"
+  WriteRegStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara\Attributes" "Language" "41E"
+  WriteRegStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara\Attributes" "Name" "Microsoft Pattara"
+  WriteRegStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara\Attributes" "Vendor" "Microsoft"
+  WriteRegStr HKLM "SOFTWARE\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara\Attributes" "Version" "11.0"
+  WriteRegStr HKLM "SOFTWARE\WOW6432Node\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara" "" "Microsoft Pattara - Thai (Thailand)"
+  WriteRegStr HKLM "SOFTWARE\WOW6432Node\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara" "41E" "Microsoft Pattara - Thai (Thailand)"
+  WriteRegStr HKLM "SOFTWARE\WOW6432Node\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara" "CLSID" "{179F3D56-1B0B-42B2-A962-59B7EF59FE1B}"
+  WriteRegExpandStr HKLM "SOFTWARE\WOW6432Node\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara" "LangDataPath" "%windir%\Speech_OneCore\Engines\TTS\th-TH\MSTTSLocThTH.dat"
+  WriteRegExpandStr HKLM "SOFTWARE\WOW6432Node\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara" "VoicePath" "%windir%\Speech_OneCore\Engines\TTS\th-TH\M1054Pattara"
+  WriteRegStr HKLM "SOFTWARE\WOW6432Node\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara\Attributes" "Age" "Adult"
+  WriteRegStr HKLM "SOFTWARE\WOW6432Node\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara\Attributes" "Gender" "Male"
+  WriteRegStr HKLM "SOFTWARE\WOW6432Node\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara\Attributes" "Language" "41E"
+  WriteRegStr HKLM "SOFTWARE\WOW6432Node\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara\Attributes" "Name" "Microsoft Pattara"
+  WriteRegStr HKLM "SOFTWARE\WOW6432Node\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara\Attributes" "Vendor" "Microsoft"
+  WriteRegStr HKLM "SOFTWARE\WOW6432Node\Microsoft\Speech\Voices\Tokens\MSTTS_V110_thTH_Pattara\Attributes" "Version" "11.0"
 
   ; ════════════════════════════════════════════════════════════════
   ; 2. en-US OneCore voices — David, Mark, Zira [OFFLINE]

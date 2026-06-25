@@ -114,6 +114,12 @@ export default function QueueCallPage() {
   useEffect(() => { loadSP() }, [loadSP])
   useEffect(() => { getDisplayConfigs().then(setDisplayConfigs) }, [])
 
+  // Sync active SP and display for mini page to read as defaults
+  useEffect(() => {
+    if (servicePointId) localStorage.setItem('qc_active_sp', servicePointId)
+    if (selectedDisplayId) localStorage.setItem('qc_active_display', selectedDisplayId)
+  }, [servicePointId, selectedDisplayId])
+
   const loadQueues = useCallback(async () => {
     if (isLoadingQueues.current) return // prevent concurrent loads
     isLoadingQueues.current = true
@@ -184,11 +190,12 @@ export default function QueueCallPage() {
   useEffect(() => {
     const off = onQueueCalled((data) => {
       setCurrentCalled(data)
-      isLoadingQueues.current = false // allow WebSocket-triggered reload to proceed
+      isLoadingQueues.current = false
       loadQueues()
     })
     return off
   }, [loadQueues])
+
 
   // Keep prewarmCtxRef current + trigger prewarm whenever SP/display/queues change
   useEffect(() => {
@@ -303,6 +310,8 @@ export default function QueueCallPage() {
   }
 
   const doCall = async (queue: QueueRow) => {
+    // Main page is calling — clear mini flag so opener does NOT refocus mini
+    ;(window as any).__miniCalledAt = null
     // ตรวจว่าจอที่เลือกกรองแผนก และแผนกคนไข้ไม่ตรง → ห้ามเรียก (ใช้ state ที่ sync แล้ว)
     if (qdFilterDepts.length > 0 && queue.department && !qdFilterDepts.includes(queue.department)) {
       const selDisplay = displayConfigs.find(d => d.id === selectedDisplayId)
@@ -353,6 +362,17 @@ export default function QueueCallPage() {
   }
 
   const handleCallNext = async () => {
+    // If a row is locked (selected) and it's waiting → call that specific queue
+    if (lockedVn) {
+      const locked = queues.find(q => q.vn === lockedVn && q.status === 'waiting')
+      if (locked) {
+        setLockedVn(null)
+        await handleCall(locked)
+        return
+      }
+      // Locked row not waiting (e.g., already calling) — clear lock and fall through
+      setLockedVn(null)
+    }
     const next = queues.find(q =>
       q.status === 'waiting' &&
       (filterDepts.length === 0 || filterDepts.includes(q.department || ''))
@@ -382,7 +402,8 @@ export default function QueueCallPage() {
       // ล็อกแถวไว้แล้ว → skip แถวนั้น
       try {
         const target = queues.find(q => q.vn === lockedVn)
-        await updateQueueStatus(lockedVn, 'skip')
+        const queueNo = target ? String(target.queue_slot || target.queue_no || '') : undefined
+        await updateQueueStatus(lockedVn, 'skip', { queueNo, servicePoint: currentSpName })
         setLockedVn(null)
         if (target?.status === 'calling') setCurrentCalled(null)
         loadQueues()
@@ -681,17 +702,6 @@ export default function QueueCallPage() {
                   จัดการหน้าจอแสดงคิว
                 </button>
                 <div className="qc-sd-divider" />
-                <button className="qc-sd-action" onClick={() => {
-                  window.open('/#/queue-mini', '_blank', 'width=320,height=540,resizable=yes,menubar=no,toolbar=no,location=no')
-                  setShowSettingsMenu(false)
-                }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                    <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="2" />
-                    <path d="M8 12h8M12 8v8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                  เปิดหน้า Mini
-                </button>
-                <div className="qc-sd-divider" />
                 <button className="qc-sd-action" onClick={() => { loadQueues(); setShowSettingsMenu(false) }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                     <path d="M1 4v6h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -728,7 +738,10 @@ export default function QueueCallPage() {
             {callingId && callingId !== '__quick__'
               ? <span className="qc-btn-spinner" />
               : <span className="qc-btn-icon">▶</span>}
-            เรียกคิวถัดไป
+            {(() => {
+              const locked = lockedVn ? queues.find(q => q.vn === lockedVn && q.status === 'waiting') : null
+              return locked ? `เรียก · ${locked.queue_slot ?? locked.queue_no ?? '?'}` : 'เรียกคิวถัดไป'
+            })()}
             <span className="qc-kbd">F2</span>
           </button>
 

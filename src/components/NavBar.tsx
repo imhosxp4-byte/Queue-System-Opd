@@ -30,7 +30,6 @@ const NAV_LINKS = [
 
 const STATIC_PAGES = [
   { label: 'เรียกคิว (Staff)', path: '/#/queue-call', icon: '📢' },
-  { label: 'Mini (Popup)', path: '/#/queue-mini', icon: '🔲' },
   { label: 'ประวัติการเรียกคิว', path: '/#/queue-history', icon: '📋' },
 ]
 
@@ -319,14 +318,13 @@ export default function NavBar() {
       <button
         className="app-nav-mini-btn"
         onClick={() => {
-          const w = 320, h = 560
-          const left = window.screen.width - w - 20
-          const top = window.screen.height - h - 60
-          window.open(
-            '/#/queue-mini',
-            'queue-mini',
-            `width=${w},height=${h},left=${left},top=${top},resizable=yes,menubar=no,toolbar=no,location=no,status=no`
+          const w = 400, h = 640
+          const popup = window.open(
+            '/#/queue-mini', 'queue-mini',
+            `width=${w},height=${h},left=${window.screen.width - w - 20},top=${Math.max(0, window.screen.height - h - 60)},resizable=yes,menubar=no,toolbar=no,location=no,status=no`
           )
+          // Store reference so QueueCall page can refocus it after audio plays
+          if (popup) (window as any).__miniWindow = popup
         }}
         title="เปิดหน้า Mini เรียกคิว"
       >

@@ -124,14 +124,15 @@ export async function callQueue(
 
 export function prewarmTTS(
   queues: Array<{ no: string; name?: string }>,
-  servicePoint: string,
+  servicePoints: string | string[],
   displayConfigId: string
 ): void {
   if (isElectron()) return
+  const spList = Array.isArray(servicePoints) ? servicePoints : [servicePoints]
   fetch('/api/tts/prewarm', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ queues, servicePoint, displayConfigId }),
+    body: JSON.stringify({ queues, servicePoints: spList, displayConfigId }),
   }).catch(() => {})
 }
 
@@ -151,10 +152,10 @@ export async function getLabXray(): Promise<Record<string, LabXrayStatus>> {
 }
 
 export async function updateQueueStatus(
-  vn: string, status: string
+  vn: string, status: string, extra?: { queueNo?: string; servicePoint?: string }
 ): Promise<{ success: boolean }> {
   if (isElectron()) return window.electronAPI.updateQueueStatus(vn, status)
-  return fetchJSON('/queue/status', { method: 'POST', body: JSON.stringify({ vn, status }) })
+  return fetchJSON('/queue/status', { method: 'POST', body: JSON.stringify({ vn, status, ...extra }) })
 }
 
 export interface CallEntry {

@@ -8,6 +8,8 @@ dist-electron/
 data/db-settings.json
 data/tts-cache/
 data/qd-config-*.json
+data/queue-calls-today.json
+data/qd-default-config.json
 
 # Installer binaries
 release/

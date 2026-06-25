@@ -3,7 +3,7 @@ import {
   onDisplayConfig, onQueueCalled, onQueueStatusChanged, onQueueAudio, onQueueClear, updateDisplayConfig,
   getSystemFonts, getServicePoints, getCallsToday, getQueueList,
   getQDDefaultConfig, saveQDDefaultConfig, getTTSVoices, getDisplayConfigById,
-  getDisplayQDConfig, saveDisplayQDConfig, previewServerTTS,
+  getDisplayQDConfig, saveDisplayQDConfig, previewServerTTS, prewarmTTS,
   type CallEntry
 } from '../lib/api'
 import './QueueDisplay.css'
@@ -231,12 +231,17 @@ export default function QueueDisplayPage() {
 
   const [blinkingSPs, setBlinkingSPs] = useState<Set<string>>(new Set())
   const blinkTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const servicePointsRef = useRef<ServicePoint[]>([])
+  const [audioUnlocked, setAudioUnlocked] = useState(false)
 
   const audioCtx = useRef<AudioContext | null>(null)
   const audioQueue = useRef<Array<{ url: string; volume: number }>>([])
   const audioPlaying = useRef(false)
   const audioGeneration = useRef(0)
-  const currentAudioSrc = useRef<AudioBufferSourceNode | null>(null)
+  // Single reusable element — avoids Android WebView's ~12 HTMLAudioElement per-page hard limit
+  const audioEl = useRef<HTMLAudioElement | null>(null)
+  // Tracks successful plays — element is recycled every 15 plays to prevent Android WebView state accumulation
+  const audioPlayCount = useRef(0)
   const serverTtsFallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const browserTtsPlayedForCall = useRef(false)
   const isResizing = useRef(false)
@@ -366,7 +371,15 @@ export default function QueueDisplayPage() {
 
   // Load service points
   useEffect(() => {
-    getServicePoints().then(setServicePoints)
+    getServicePoints().then(sps => { setServicePoints(sps); servicePointsRef.current = sps })
+  }, [])
+
+  // Detect autoplay capability — browsers block audio until user interacts with the page
+  useEffect(() => {
+    const el = new Audio()
+    el.muted = true
+    el.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA='
+    el.play().then(() => { el.pause(); setAudioUnlocked(true) }).catch(() => setAudioUnlocked(false))
   }, [])
 
   // Clock tick
@@ -384,6 +397,22 @@ export default function QueueDisplayPage() {
       ])
       setNoShowQueues(calls.filter((c: CallEntry) => c.status === 'skip'))
       if (queueRes.success) {
+        // Prewarm Edge TTS for upcoming queues × visible channels — eliminates delay on first call
+        const cfg = configRef.current
+        if (cfg.ttsEnabled && cfg.ttsSource === 'server') {
+          const waiting = queueRes.data
+            .filter((q: QueueItem) => q.status === 'waiting' || !q.status)
+            .slice(0, 3)
+            .map((q: QueueItem) => ({ no: q.queue_slot || String(q.queue_no), name: q.queue_name }))
+          if (waiting.length > 0) {
+            const spList = cfg.displayChannels?.length > 0
+              ? cfg.displayChannels.slice(0, 5)
+              : servicePointsRef.current.length > 0
+                ? servicePointsRef.current.slice(0, 5).map(sp => sp.id)
+                : ['1', '2', '3']
+            prewarmTTS(waiting, spList, cfg.displayConfigId || '')
+          }
+        }
         const depts = Array.from(new Set(queueRes.data.map((q: QueueItem) => q.department).filter(Boolean))).sort() as string[]
         setAvailDepts(depts)
         // อัพเดตชื่อโดยใช้ spQueues เป็น reference (match queueNo → name)
@@ -432,7 +461,7 @@ export default function QueueDisplayPage() {
       if (cfg.ttsEnabled && cfg.ttsSource !== 'server') {
         playTTS(data.queueNo, data.servicePoint, cfg, (data as any).queueName)
       } else if (cfg.ttsEnabled && cfg.ttsSource === 'server') {
-        // Server TTS: start 800ms fallback — gives cache hits plenty of time to arrive
+        // Server TTS: wait 9s before browser fallback — server audio arrives within 6-8.5s for slow Edge
         browserTtsPlayedForCall.current = false
         if (serverTtsFallbackTimer.current) clearTimeout(serverTtsFallbackTimer.current)
         const snapData = data, snapCfg = cfg
@@ -441,7 +470,7 @@ export default function QueueDisplayPage() {
             browserTtsPlayedForCall.current = true
             playTTS(snapData.queueNo, snapData.servicePoint, snapCfg, (snapData as any).queueName)
           }
-        }, 800)
+        }, 9000)
       } else if (cfg.soundEnabled) {
         playBeep()
       }
@@ -465,12 +494,13 @@ export default function QueueDisplayPage() {
         // Invalidate all in-flight drain sessions + discard stale audio
         audioGeneration.current++
         audioQueue.current = []
-        if (currentAudioSrc.current) {
-          try { currentAudioSrc.current.stop() } catch {}
-          currentAudioSrc.current = null
+        if (audioEl.current) {
+          audioEl.current.onerror = null
+          audioEl.current.onended = null
+          audioEl.current.pause()
+          audioEl.current.src = ''
         }
         audioPlaying.current = false
-        // Close AudioContext — will be recreated fresh on next play
         if (audioCtx.current) {
           audioCtx.current.close().catch(() => {})
           audioCtx.current = null
@@ -481,35 +511,79 @@ export default function QueueDisplayPage() {
     return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [])
 
-  // Play audio URL via AudioContext — returns Promise that resolves when audio ends
-  const playAudioUrl = (url: string, volume: number): Promise<void> => {
-    return new Promise(async (resolve) => {
-      let settled = false
-      const done = () => { if (!settled) { settled = true; resolve() } }
-      try {
-        // Recreate AudioContext if closed or missing (Android kills it in background)
-        if (!audioCtx.current || audioCtx.current.state === 'closed') {
-          audioCtx.current = new AudioContext()
+  // Watchdog: if audioPlaying is stuck true for 15s+ with nothing actually playing, reset it
+  // Covers the rare case where a Promise never resolves despite the 12s safety timeout
+  useEffect(() => {
+    const audioPlayingSince = { ts: 0 }
+    const id = setInterval(() => {
+      if (!audioPlaying.current) { audioPlayingSince.ts = 0; return }
+      const el = audioEl.current
+      const actuallyPlaying = el && !el.paused && !el.ended && el.readyState >= 2
+      if (!actuallyPlaying) {
+        if (audioPlayingSince.ts === 0) { audioPlayingSince.ts = Date.now(); return }
+        if (Date.now() - audioPlayingSince.ts > 15000) {
+          console.warn('[audio] watchdog: resetting stuck audioPlaying lock')
+          audioPlaying.current = false
+          audioPlayingSince.ts = 0
+          if (audioQueue.current.length > 0) drainAudioQueue(audioGeneration.current)
         }
-        if (audioCtx.current.state === 'suspended') await audioCtx.current.resume()
-        const resp = await fetch(url)
-        const buf = await resp.arrayBuffer()
-        const decoded = await audioCtx.current.decodeAudioData(buf)
-        const src = audioCtx.current.createBufferSource()
-        const gain = audioCtx.current.createGain()
-        gain.gain.value = volume
-        src.buffer = decoded
-        src.connect(gain)
-        gain.connect(audioCtx.current.destination)
-        currentAudioSrc.current = src
-        src.onended = () => { currentAudioSrc.current = null; done() }
-        src.start()
-        // Safety: resolve after audio duration + 2s in case onended doesn't fire
-        setTimeout(done, (decoded.duration * 1000) + 2000)
-      } catch (e) {
-        console.error('[playAudioUrl]', e)
-        done()
+      } else {
+        audioPlayingSince.ts = 0
       }
+    }, 3000)
+    return () => clearInterval(id)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Play audio via HTMLAudioElement — single element reused to stay within Android WebView's ~12 per-page limit,
+  // but recycled every 15 plays to prevent internal state accumulation on old WebViews
+  const playAudioUrl = (url: string, volume: number): Promise<void> => {
+    return new Promise((resolve) => {
+      try {
+        // Recycle element proactively to avoid Android WebView state rot
+        audioPlayCount.current++
+        if (!audioEl.current || audioPlayCount.current > 15) {
+          if (audioEl.current) {
+            // Clear handlers BEFORE src='' — prevents stale error events from
+            // firing on the new element's done() closure after we create it
+            audioEl.current.onerror = null
+            audioEl.current.onended = null
+            audioEl.current.pause()
+            audioEl.current.src = ''
+          }
+          audioEl.current = new Audio()
+          audioPlayCount.current = 1
+        }
+        const audio = audioEl.current
+        audio.pause()
+        audio.volume = Math.min(Math.max(volume, 0), 1)
+        audio.src = url.includes('?') ? `${url}&_t=${Date.now()}` : `${url}?_t=${Date.now()}`
+        audio.load() // Explicit reset+reload — fixes stale internal state on old Android WebViews
+
+        let settled = false
+        // failed=true → force recycle on next call, but NEVER nullify audioEl.current:
+        // a stale safety timer from a previous play session fires 8s later and would null out
+        // the CURRENT session's element, causing two audio elements to play simultaneously.
+        const done = (failed = false) => {
+          if (!settled) {
+            settled = true
+            if (failed) audioPlayCount.current = 16 // trigger recycle next call
+            resolve()
+          }
+        }
+        const safety = setTimeout(() => done(true), 8000)
+        audio.onended = () => { clearTimeout(safety); done() }
+        audio.onerror = () => { clearTimeout(safety); done(true) }
+        try {
+          const p = audio.play()
+          if (p !== undefined) {
+            p.catch(() => { clearTimeout(safety); done(true) })
+          } else {
+            // Old Android: play() returns undefined — detect silent failure after 3s
+            // (if audio started, paused=false; if failed silently, paused=true)
+            setTimeout(() => { if (!settled && audio.paused) { clearTimeout(safety); done(true) } }, 3000)
+          }
+        } catch { clearTimeout(safety); done(true) }
+      } catch { resolve() }
     })
   }
 
@@ -520,13 +594,19 @@ export default function QueueDisplayPage() {
     audioPlaying.current = true
     while (audioQueue.current.length > 0 && gen === audioGeneration.current) {
       const item = audioQueue.current.shift()!
-      await playAudioUrl(item.url, item.volume)
+      try {
+        await playAudioUrl(item.url, item.volume)
+      } catch { /* playAudioUrl should never reject — belt-and-suspenders guard */ }
       if (audioQueue.current.length > 0 && gen === audioGeneration.current) {
         await new Promise(r => setTimeout(r, 600))
       }
     }
     // Only release lock if we are still the current session
-    if (gen === audioGeneration.current) audioPlaying.current = false
+    if (gen === audioGeneration.current) {
+      audioPlaying.current = false
+      // Re-drain items that may have been enqueued between our last queue check and lock release
+      if (audioQueue.current.length > 0) drainAudioQueue(audioGeneration.current)
+    }
   }
 
   const enqueueAudio = (url: string, volume: number) => {
@@ -541,19 +621,21 @@ export default function QueueDisplayPage() {
       if (cfg.displayConfigId && data.displayConfigId && data.displayConfigId !== cfg.displayConfigId) return
       if (cfg.filterDepts.length > 0 && (data as any).department && !cfg.filterDepts.includes((data as any).department)) return
       if (serverTtsFallbackTimer.current) { clearTimeout(serverTtsFallbackTimer.current); serverTtsFallbackTimer.current = null }
-      // Skip server TTS only if browser TTS is actively speaking — prevents double announcement
-      if (browserTtsPlayedForCall.current && window.speechSynthesis?.speaking) {
-        browserTtsPlayedForCall.current = false
-        return
-      }
+      // Cancel any browser TTS that may have started (fallback fired early due to slow server TTS)
+      // — don't skip server TTS, cancel browser TTS instead to prevent double announcement
+      if (window.speechSynthesis?.speaking) window.speechSynthesis.cancel()
       browserTtsPlayedForCall.current = false
       // Invalidate all old drain sessions + discard queue — new announcement plays immediately
       audioGeneration.current++
       audioQueue.current = []
-      if (currentAudioSrc.current) {
-        try { currentAudioSrc.current.stop() } catch {}
-        currentAudioSrc.current = null
+      if (audioEl.current) {
+        // Only pause — do NOT set src='' here: it queues an error event that fires
+        // after playAudioUrl sets onerror, causing the new play to fail immediately.
+        // playAudioUrl sets the new src itself via audio.src + audio.load().
+        audioEl.current.pause()
       }
+      // Do NOT reset audioPlayCount here — let it accumulate so the element is
+      // actually recycled every 15 plays (resetting here made the recycle dead code).
       audioPlaying.current = false
       enqueueAudio(data.audioUrl, cfg.ttsVolume ?? 1)
     })
@@ -635,6 +717,9 @@ export default function QueueDisplayPage() {
     const picked = voices.find(v => v.name === cfg.ttsVoiceName)
       || voices.find(v => v.lang === 'th-TH')
       || voices.find(v => v.lang.startsWith('th'))
+    // If this display uses server TTS and no Thai voice is available, stay silent.
+    // Playing English default is worse than silence when the configured voice is Thai.
+    if (!picked && cfg.ttsSource === 'server') return
     if (picked) utt.voice = picked
     window.speechSynthesis.speak(utt)
   }
@@ -761,7 +846,7 @@ export default function QueueDisplayPage() {
                   {displayName}
                 </div>
               )}
-              <div className="qd-td qd-td-queue" style={{
+              <div key={`q-${rowKey}`} className="qd-td qd-td-queue" style={{
                 background: config.queueBg,
                 ...(isBlinking ? {
                   animation: `qd-blink-anim ${config.blinkSpeed}ms step-end ${config.blinkCount}`,
@@ -770,7 +855,7 @@ export default function QueueDisplayPage() {
                 } as React.CSSProperties : {})
               }}>
                 {queueNo ? (
-                  <div key={rowKey} className={`qd-queue-cell ${animClass}`}>
+                  <div className={`qd-queue-cell ${animClass}`}>
                     {patientName ? (
                       <>
                         <span className="qd-queue-no-small" style={{ color: config.queueColor }}>{badge && <span className="qd-badge-inline">{badge}</span>}{queueNo}</span>
@@ -875,7 +960,7 @@ export default function QueueDisplayPage() {
               <span className="qd-right-empty">ไม่มีรายการ</span>
             ) : (
               <div className="qd-noshow-list">
-                {noShowQueues.slice(0, config.rightPanelMaxItems).map((item) => {
+                {[...noShowQueues].sort((a, b) => (b.calledAt || '').localeCompare(a.calledAt || '')).slice(0, config.rightPanelMaxItems).map((item) => {
                   const badge = extractBadge(item.queueNo)
                   return (
                     <div key={item.vn} className="qd-noshow-item"
@@ -1279,6 +1364,7 @@ export default function QueueDisplayPage() {
                         <option value="">{loadingVoices ? 'กำลังโหลด…' : serverTtsVoices.length === 0 ? 'ไม่พบเสียง' : 'อัตโนมัติ (อาจารา ไทย)'}</option>
                         {serverTtsVoices.map(v => {
                           const labels: Record<string, string> = {
+                            'th-TH-Google':          '🇹🇭 Google TTS (ไทย) — เร็ว ~400ms',
                             'th-TH-AcharaNeural':    '🇹🇭 อาจารา (ไทย หญิง) — Neural',
                             'th-TH-NiwatNeural':     '🇹🇭 นิวัตร (ไทย ชาย) — Neural',
                             'th-TH-PremwadeeNeural': '🇹🇭 เปรมวดี (ไทย หญิง) — Neural',
@@ -1411,6 +1497,25 @@ export default function QueueDisplayPage() {
               <button className="btn btn-ghost" onClick={() => setShowNamePwdDialog(false)}>ยกเลิก</button>
               <button className="btn btn-primary" onClick={confirmNamePwd}>ยืนยัน</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── AUDIO UNLOCK OVERLAY ─────────────────────────────── */}
+      {audioUnlocked === false && !(typeof window !== 'undefined' && (window as any).electronAPI) && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.75)', cursor: 'pointer' }}
+          onClick={() => {
+            const el = new Audio()
+            el.muted = true
+            el.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA='
+            el.play().catch(() => {}).finally(() => { el.pause(); setAudioUnlocked(true) })
+          }}
+        >
+          <div style={{ background: '#1a2a4a', border: '2px solid #00bcd4', borderRadius: 16, padding: '40px 60px', textAlign: 'center', color: '#fff' }}>
+            <div style={{ fontSize: '3rem', marginBottom: 12 }}>🔊</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: 8 }}>แตะเพื่อเปิดเสียง</div>
+            <div style={{ fontSize: '0.9rem', opacity: 0.7 }}>Tap to enable audio</div>
           </div>
         </div>
       )}

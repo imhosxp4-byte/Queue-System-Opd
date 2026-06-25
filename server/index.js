@@ -199,11 +199,17 @@ app.use(express.json())
 // Serve built frontend (supports env override for packaged Electron app)
 const RENDERER_DIR = process.env.RENDERER_DIR || path.join(__dirname, '..', 'out', 'renderer')
 if (fs.existsSync(RENDERER_DIR)) {
+  // index.html: no-cache so browsers always load the latest build
+  app.get('/index.html', (req, res) => {
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate')
+    res.sendFile(path.join(RENDERER_DIR, 'index.html'))
+  })
   app.use(express.static(RENDERER_DIR))
 }
 
 // Serve TTS audio cache
 app.use('/tts-audio', express.static(TTS_CACHE_DIR))
+
 
 // ─── Server-side TTS (Microsoft Edge Neural + SAPI fallback) ─────────────────
 
@@ -225,6 +231,10 @@ const EDGE_VOICES = [
   { name: 'en-US-GuyNeural',              label: '🇺🇸 Guy (อังกฤษ ชาย) — Neural' },
 ]
 
+const GOOGLE_VOICES = [
+  { name: 'th-TH-Google', label: '🇹🇭 Google TTS (ไทย)' },
+]
+
 function cleanTTSCache(exceptFile) {
   try {
     const now = Date.now()
@@ -236,6 +246,62 @@ function cleanTTSCache(exceptFile) {
       } catch {}
     })
   } catch {}
+}
+
+// Dedup map: prevents concurrent calls with same key from writing to the same file simultaneously
+const _edgeTtsInProgress = new Map()
+const _googleTtsInProgress = new Map()
+
+// Google Translate TTS — fast HTTP GET, no SDK needed, cache key matches Edge TTS format
+async function generateGoogleTTS(text, rate) {
+  const crypto = require('crypto')
+  const https = require('https')
+  // Use voice name in key so it's compatible with the unified prewarm cache check
+  const cacheKey = crypto.createHash('md5').update(`th-TH-Google_${String(rate ?? 1)}_${text}`).digest('hex')
+  const filename = `tts_${cacheKey}.mp3`
+  const filepath = path.join(TTS_CACHE_DIR, filename)
+
+  if (fs.existsSync(filepath)) {
+    console.log(`[GoogleTTS] cache hit → ${filename}`)
+    return `/tts-audio/${filename}`
+  }
+  if (_googleTtsInProgress.has(cacheKey)) return _googleTtsInProgress.get(cacheKey)
+
+  const promise = (async () => {
+    const speed = Math.min(1.0, Math.max(0.1, parseFloat(rate) || 1))
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=th&client=tw-ob&ttsspeed=${speed}`
+    console.log(`[GoogleTTS] speed=${speed} text="${text.slice(0, 50)}"`)
+    await new Promise((resolve, reject) => {
+      const reqHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://translate.google.com/'
+      }
+      const doGet = (target) => {
+        https.get(target, { headers: reqHeaders }, (res) => {
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            res.resume()
+            return doGet(res.headers.location)
+          }
+          if (res.statusCode !== 200) {
+            res.resume()
+            return reject(new Error(`Google TTS HTTP ${res.statusCode}`))
+          }
+          const ws = fs.createWriteStream(filepath)
+          res.pipe(ws)
+          ws.on('finish', () => { console.log(`[GoogleTTS] OK → ${filename}`); resolve() })
+          ws.on('error', reject)
+          res.on('error', reject)
+        }).on('error', reject)
+      }
+      doGet(url)
+    })
+    cleanTTSCache(filename)
+    return `/tts-audio/${filename}`
+  })()
+
+  _googleTtsInProgress.set(cacheKey, promise)
+  promise.finally(() => _googleTtsInProgress.delete(cacheKey))
+  return promise
 }
 
 // Edge Neural TTS generation (content-based cache: same text+voice+rate → instant return)
@@ -250,34 +316,50 @@ async function generateEdgeTTS(text, voiceName, rate) {
     return `/tts-audio/${filename}`
   }
 
-  console.log(`[EdgeTTS] voice=${voice} rate=${rate} text="${text.slice(0, 40)}"`)
-  const tts = new MsEdgeTTS()
-  await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3)
-  const prosody = new ProsodyOptions()
-  prosody.rate = Number(rate)
-  const { audioStream } = tts.toStream(text, prosody)
+  // Reuse in-progress promise for same text+voice+rate — prevents concurrent writes to the same file
+  if (_edgeTtsInProgress.has(cacheKey)) return _edgeTtsInProgress.get(cacheKey)
 
-  await new Promise((resolve, reject) => {
-    const ws = fs.createWriteStream(filepath)
-    audioStream.pipe(ws)
-    ws.on('finish', () => { console.log(`[EdgeTTS] OK → ${filename}`); resolve() })
-    ws.on('error', (e) => { console.error('[EdgeTTS] write error:', e.message); reject(e) })
-    audioStream.on('error', (e) => { console.error('[EdgeTTS] stream error:', e.message); reject(e) })
-  })
-  cleanTTSCache(filename)
-  return `/tts-audio/${filename}`
+  const promise = (async () => {
+    console.log(`[EdgeTTS] voice=${voice} rate=${rate} text="${text.slice(0, 40)}"`)
+    const tts = new MsEdgeTTS()
+    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3)
+    const prosody = new ProsodyOptions()
+    prosody.rate = Number(rate)
+    const { audioStream } = tts.toStream(text, prosody)
+
+    await new Promise((resolve, reject) => {
+      const ws = fs.createWriteStream(filepath)
+      audioStream.pipe(ws)
+      ws.on('finish', () => { console.log(`[EdgeTTS] OK → ${filename}`); resolve() })
+      ws.on('error', (e) => { console.error('[EdgeTTS] write error:', e.message); reject(e) })
+      audioStream.on('error', (e) => { console.error('[EdgeTTS] stream error:', e.message); reject(e) })
+    })
+    cleanTTSCache(filename)
+    return `/tts-audio/${filename}`
+  })()
+
+  _edgeTtsInProgress.set(cacheKey, promise)
+  promise.finally(() => _edgeTtsInProgress.delete(cacheKey))
+  return promise
 }
 
-// SAPI fallback (Windows built-in voices)
+// SAPI fallback (Windows built-in voices) — content-based cache to avoid regenerating same text
+// Concurrent generation of the same text is deduplicated via _sapiInProgress map
+const _sapiInProgress = new Map()
 function generateSAPITTS(text, voiceName, rate) {
-  return new Promise((resolve, reject) => {
-    const filename = `tts_${Date.now()}.wav`
-    const filepath = path.join(TTS_CACHE_DIR, filename)
+  const cacheKey = require('crypto').createHash('md5').update(`sapi_${voiceName}_${String(rate)}_${text}`).digest('hex')
+  const filename = `tts_sapi_${cacheKey}.wav`
+  const filepath = path.join(TTS_CACHE_DIR, filename)
+  if (fs.existsSync(filepath)) return Promise.resolve(`/tts-audio/${filename}`)
+  // Deduplicate concurrent requests for the same text+voice — reuse in-progress Promise
+  if (_sapiInProgress.has(cacheKey)) return _sapiInProgress.get(cacheKey)
+  const promise = new Promise((resolve, reject) => {
     const sapiRate = Math.max(-10, Math.min(10, Math.round((Number(rate) - 1) * 7)))
     const script = [
       'Add-Type -AssemblyName System.Speech',
       '$s = New-Object System.Speech.Synthesis.SpeechSynthesizer',
-      voiceName ? `$s.SelectVoice('${voiceName.replace(/'/g, "''")}')` : '',
+      // try/catch: if voice not installed, fall back to system default rather than throwing
+      voiceName ? `try { $s.SelectVoice('${voiceName.replace(/'/g, "''")}') } catch { }` : '',
       `$s.Rate = ${sapiRate}`,
       `$s.SetOutputToWaveFile('${filepath.replace(/\\/g, '\\\\')}')`,
       `$s.Speak('${text.replace(/'/g, "''")}')`,
@@ -287,19 +369,169 @@ function generateSAPITTS(text, voiceName, rate) {
     exec(`powershell -NoProfile -NonInteractive -EncodedCommand ${encoded}`,
       { timeout: 15000 },
       (err) => {
-        if (err || !fs.existsSync(filepath)) return reject(err || new Error('WAV not created'))
+        if (err || !fs.existsSync(filepath) || fs.statSync(filepath).size < 512) {
+          return reject(err || new Error('WAV not created or empty'))
+        }
         cleanTTSCache(filename)
         resolve(`/tts-audio/${filename}`)
       }
     )
   })
+  _sapiInProgress.set(cacheKey, promise)
+  promise.finally(() => _sapiInProgress.delete(cacheKey))
+  return promise
 }
 
-// Main TTS generator: Edge Neural first, SAPI as fallback
+// HOST audio — plays WAV files sequentially on the Windows machine via System.Media.SoundPlayer (offline, reliable)
+// Only enabled when Microsoft Pattara (Thai) voice is actually accessible via System.Speech on this machine.
+// If Pattara is not installed, HOST audio stays silent — prevents English fallback voice from playing.
+const _hostAudioQueue = []
+let _hostAudioBusy = false
+let _hostAudioEnabled = false
+
+exec(
+  `powershell -NoProfile -NonInteractive -Command "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | Where-Object { $_.VoiceInfo.Name -eq 'Microsoft Pattara' } | Measure-Object | Select-Object -ExpandProperty Count"`,
+  { timeout: 8000 },
+  (err, stdout) => {
+    _hostAudioEnabled = !err && parseInt(stdout.trim()) > 0
+    console.log(`[HOST audio] Microsoft Pattara ${_hostAudioEnabled ? 'found — host playback enabled' : 'not found — host playback disabled'}`)
+  }
+)
+
+function drainHostAudio() {
+  if (_hostAudioQueue.length === 0) { _hostAudioBusy = false; return }
+  _hostAudioBusy = true
+  const wavFilePath = _hostAudioQueue.shift()
+  if (!fs.existsSync(wavFilePath)) { drainHostAudio(); return }
+  const escaped = wavFilePath.replace(/\\/g, '\\\\').replace(/'/g, "''")
+  const script = `(New-Object System.Media.SoundPlayer '${escaped}').PlaySync()`
+  const encoded = Buffer.from(script, 'utf16le').toString('base64')
+  console.log('[HOST audio] playing:', path.basename(wavFilePath))
+  exec(`powershell -NoProfile -NonInteractive -EncodedCommand ${encoded}`,
+    { timeout: 30000 },
+    () => drainHostAudio()
+  )
+}
+
+function playAudioOnHost(wavFilePath) {
+  if (!wavFilePath || !fs.existsSync(wavFilePath)) return
+  _hostAudioQueue.push(wavFilePath)
+  if (!_hostAudioBusy) drainHostAudio()
+}
+
+// Limit concurrent Edge TTS connections — Microsoft rate-limits after too many simultaneous WebSocket connections
+let _edgeTtsActive = 0
+const EDGE_TTS_MAX_CONCURRENT = 2
+
+// Sequential prewarm queue — processes tasks one at a time, yields when main calls are active
+const _prewarmTasks = []
+let _prewarmDraining = false
+
+async function drainPrewarmQueue() {
+  if (_prewarmDraining) return
+  _prewarmDraining = true
+  try {
+    while (_prewarmTasks.length > 0) {
+      const task = _prewarmTasks[0]
+      // Skip if already cached
+      const cacheKey = require('crypto').createHash('md5').update(`${task.voice}_${String(task.rate)}_${task.text}`).digest('hex')
+      if (fs.existsSync(path.join(TTS_CACHE_DIR, `tts_${cacheKey}.mp3`))) {
+        _prewarmTasks.shift()
+        continue
+      }
+      // Yield when main call is generating Edge TTS
+      if (_edgeTtsActive >= EDGE_TTS_MAX_CONCURRENT) {
+        await new Promise(r => setTimeout(r, 300))
+        continue
+      }
+      _prewarmTasks.shift()
+      try {
+        if (GOOGLE_VOICES.some(v => v.name === task.voice)) {
+          await generateGoogleTTS(task.text, task.rate)
+        } else {
+          await generateEdgeTTS(task.text, task.voice, task.rate)
+        }
+        console.log(`[prewarm] ${task.label}`)
+      } catch {}
+      await new Promise(r => setTimeout(r, 150))
+    }
+  } finally {
+    _prewarmDraining = false
+    if (_prewarmTasks.length > 0) drainPrewarmQueue()
+  }
+}
+
+function enqueuePrewarm(text, voice, rate, label, priority = false) {
+  const existingIdx = _prewarmTasks.findIndex(t => t.text === text && t.voice === voice)
+  if (existingIdx !== -1) {
+    // Already queued — if priority, move to front so it runs immediately
+    if (priority && existingIdx > 0) {
+      const [task] = _prewarmTasks.splice(existingIdx, 1)
+      _prewarmTasks.unshift(task)
+    }
+    return
+  }
+  const task = { text, voice, rate: rate ?? 1, label: label || '' }
+  if (priority) {
+    _prewarmTasks.unshift(task) // jump to front — post-call prewarm runs before server background tasks
+  } else {
+    _prewarmTasks.push(task)
+  }
+  drainPrewarmQueue()
+}
+
+// Main TTS generator — routes to Google, Edge, or SAPI based on configured voice.
 async function generateServerTTS(text, voiceName, rate) {
+  const crypto = require('crypto')
+  // Google TTS — fast direct HTTP, no timeout complexity needed
+  if (GOOGLE_VOICES.some(v => v.name === voiceName)) {
+    const googlePromise = generateGoogleTTS(text, rate)
+    try {
+      return await Promise.race([
+        googlePromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Google TTS timeout')), 6000))
+      ])
+    } catch (e) {
+      throw Object.assign(e, { edgePromise: googlePromise })
+    }
+  }
   const isEdgeVoice = EDGE_VOICES.some(v => v.name === voiceName) || !voiceName
   if (isEdgeVoice) {
-    return generateEdgeTTS(text, voiceName || 'th-TH-AcharaNeural', rate)
+    const edgeVoice = voiceName || 'th-TH-AcharaNeural'
+    // Fast path: Edge cache hit — return correct configured voice with no network call
+    const edgeKey = crypto.createHash('md5').update(`${edgeVoice}_${String(rate)}_${text}`).digest('hex')
+    if (fs.existsSync(path.join(TTS_CACHE_DIR, `tts_${edgeKey}.mp3`)))
+      return `/tts-audio/tts_${edgeKey}.mp3`
+
+    // No Edge cache — start SAPI as parallel fallback ONLY when Pattara is confirmed installed.
+    // If Pattara is missing, SAPI falls through to Windows system-default voice (often English),
+    // which is worse than letting the browser's 4s fallback fire with the configured Thai voice.
+    const sapiPromise = _hostAudioEnabled
+      ? generateSAPITTS(text, 'Microsoft Pattara', rate).catch(() => null)
+      : null
+    if (_edgeTtsActive < EDGE_TTS_MAX_CONCURRENT) {
+      _edgeTtsActive++
+      const edgePromise = generateEdgeTTS(text, edgeVoice, rate)
+      try {
+        return await Promise.race([
+          edgePromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Edge TTS timeout')), 6000))
+        ])
+      } catch (e) {
+        // edgePromise still runs in background — caller can listen to it for late broadcast
+        console.warn('[TTS] Edge failed/timeout, using SAPI:', e.message)
+        throw Object.assign(e, { edgePromise })
+      } finally {
+        _edgeTtsActive--
+      }
+    } else {
+      console.warn('[TTS] Edge at capacity, using SAPI directly')
+    }
+    if (sapiPromise) {
+      const sapiUrl = await sapiPromise
+      if (sapiUrl) return sapiUrl
+    }
+    throw new Error('TTS generation failed: Edge unavailable, no valid SAPI fallback')
   }
   return generateSAPITTS(text, voiceName, rate)
 }
@@ -317,9 +549,15 @@ app.get('/api/tts/test', async (req, res) => {
 })
 
 // Pre-warm TTS cache for upcoming queues — respond immediately, generate in background
+// Accepts servicePoints (array) to prewarm for all visible channels on the display
 app.post('/api/tts/prewarm', (req, res) => {
   res.json({ success: true })
-  const { queues = [], servicePoint = '', displayConfigId = '' } = req.body || {}
+  const { queues = [], servicePoints, servicePoint, displayConfigId = '' } = req.body || {}
+  // support both legacy single servicePoint and new array servicePoints
+  const spList = Array.isArray(servicePoints) ? servicePoints.slice(0, 5)
+    : servicePoints ? [String(servicePoints)]
+    : servicePoint ? [String(servicePoint)]
+    : ['']
   try {
     const qdFile = displayConfigId ? qdConfigFile(displayConfigId) : QD_DEFAULT_FILE
     const qdCfg = fs.existsSync(qdFile)
@@ -327,13 +565,19 @@ app.post('/api/tts/prewarm', (req, res) => {
       : (fs.existsSync(QD_DEFAULT_FILE) ? JSON.parse(fs.readFileSync(QD_DEFAULT_FILE, 'utf-8')) : null)
     if (!qdCfg || !qdCfg.ttsEnabled || qdCfg.ttsSource !== 'server') return
     const voiceName = qdCfg.ttsServerVoiceName || qdCfg.ttsVoiceName || ''
-    for (const q of queues.slice(0, 5)) {
-      const text = (qdCfg.ttsShowName === true) && q.name
-        ? [qdCfg.ttsPrefix1, q.name, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
-        : [qdCfg.ttsPrefix1, q.no, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
-      generateServerTTS(text, voiceName, qdCfg.ttsRate ?? 1)
-        .then(() => console.log(`[TTS prewarm] ${q.no}`))
-        .catch(() => {})
+    const isNetworkVoice = EDGE_VOICES.some(v => v.name === voiceName) || GOOGLE_VOICES.some(v => v.name === voiceName) || !voiceName
+    const edgeVoice = isNetworkVoice ? (voiceName || 'th-TH-AcharaNeural') : null
+    for (const sp of spList) {
+      for (const q of queues.slice(0, 3)) {
+        const text = (qdCfg.ttsShowName === true) && q.name
+          ? [qdCfg.ttsPrefix1, q.name, qdCfg.ttsMiddle, String(sp), qdCfg.ttsSuffix].filter(Boolean).join(' ')
+          : [qdCfg.ttsPrefix1, q.no, qdCfg.ttsMiddle, String(sp), qdCfg.ttsSuffix].filter(Boolean).join(' ')
+        if (edgeVoice) {
+          enqueuePrewarm(text, edgeVoice, qdCfg.ttsRate ?? 1, `client sp=${sp} q=${q.no}`)
+        } else {
+          generateSAPITTS(text, 'Microsoft Pattara', qdCfg.ttsRate ?? 1).catch(() => {})
+        }
+      }
     }
   } catch {}
 })
@@ -361,8 +605,9 @@ app.get('/api/tts/voices', (req, res) => {
     (err, stdout) => {
       const sapiVoices = err ? [] : stdout.split('\n').map(v => v.trim()).filter(Boolean)
       // Edge voices first (Thai Neural), then SAPI voices
+      const googleList = GOOGLE_VOICES.map(v => v.name)
       const edgeList = EDGE_VOICES.map(v => v.name)
-      const combined = [...edgeList, ...sapiVoices.filter(v => !edgeList.includes(v))]
+      const combined = [...googleList, ...edgeList, ...sapiVoices.filter(v => !edgeList.includes(v) && !googleList.includes(v))]
       res.json(combined)
     }
   )
@@ -791,26 +1036,55 @@ app.post('/api/queue/call', async (req, res) => {
           ? [qdCfg.ttsPrefix1, ttsName, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
           : [qdCfg.ttsPrefix1, displayNo, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
         const voiceName = qdCfg.ttsServerVoiceName || qdCfg.ttsVoiceName || ''
-        generateServerTTS(text, voiceName, qdCfg.ttsRate ?? 1).then(audioUrl => {
+        // HOST audio — only when Pattara is confirmed installed (checked at startup)
+        if (_hostAudioEnabled) {
+          generateSAPITTS(text, 'Microsoft Pattara', qdCfg.ttsRate ?? 1)
+            .then(audioUrl => playAudioOnHost(path.join(TTS_CACHE_DIR, path.basename(audioUrl))))
+            .catch(() => {})
+        }
+        const doBroadcastAndPrewarm = (audioUrl) => {
           broadcast({ type: 'queue:audio', data: { audioUrl, displayConfigId: displayConfigId || null, department } })
-          // Pre-warm TTS cache for next 3 waiting queues so they play instantly
           try {
-            const currentCalls = getTodayCalls()
-            const waitingNext = rows
-              .filter(r => r.vn !== found.vn && (!currentCalls[r.vn] || currentCalls[r.vn].status === 'waiting'))
-              .slice(0, 3)
-            for (const next of waitingNext) {
-              const nextNo = next.queue_slot || (next.queue_no != null ? String(next.queue_no) : '')
-              const nextName = next.queue_name || ''
-              const nextText = (qdCfg.ttsShowName === true) && nextName
-                ? [qdCfg.ttsPrefix1, nextName, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
-                : [qdCfg.ttsPrefix1, nextNo, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
-              generateServerTTS(nextText, voiceName, qdCfg.ttsRate ?? 1)
-                .then(() => console.log(`[TTS prewarm] ${nextNo}`))
-                .catch(() => {})
+            const isNetworkVoice = EDGE_VOICES.some(v => v.name === voiceName) || GOOGLE_VOICES.some(v => v.name === voiceName) || !voiceName
+            const prewarmEdgeVoice = isNetworkVoice ? (voiceName || 'th-TH-AcharaNeural') : null
+            if (prewarmEdgeVoice) {
+              const currentCalls = getTodayCalls()
+              const waitingNext = rows
+                .filter(r => r.vn !== found.vn && (!currentCalls[r.vn] || currentCalls[r.vn].status === 'waiting'))
+                .slice(0, 3)
+              const allSPs = loadServicePoints().map(sp => sp.id)
+              // Iterate in REVERSE so unshift produces correct order at queue front.
+              // Each unshift inserts at [0], so the last-inserted item ends up first.
+              // Reverse order: last inserted = waitingNext[0] × allSPs[0] = next queue, first SP → position 0 ✓
+              for (let ni = waitingNext.length - 1; ni >= 0; ni--) {
+                const next = waitingNext[ni]
+                const nextNo = next.queue_slot || (next.queue_no != null ? String(next.queue_no) : '')
+                const nextName = next.queue_name || ''
+                for (let si = allSPs.length - 1; si >= 0; si--) {
+                  const sp = allSPs[si]
+                  const nextText = (qdCfg.ttsShowName === true) && nextName
+                    ? [qdCfg.ttsPrefix1, nextName, qdCfg.ttsMiddle, String(sp), qdCfg.ttsSuffix].filter(Boolean).join(' ')
+                    : [qdCfg.ttsPrefix1, nextNo, qdCfg.ttsMiddle, String(sp), qdCfg.ttsSuffix].filter(Boolean).join(' ')
+                  enqueuePrewarm(nextText, prewarmEdgeVoice, qdCfg.ttsRate ?? 1, `post-call sp=${sp} q=${nextNo}`, true)
+                }
+              }
             }
           } catch {}
-        }).catch(err => console.error('[TTS async]', err.message))
+        }
+        generateServerTTS(text, voiceName, qdCfg.ttsRate ?? 1)
+          .then(audioUrl => doBroadcastAndPrewarm(audioUrl))
+          .catch(err => {
+            // Edge timed out (4.5s) but background promise may still resolve.
+            // If it does within 1s more, broadcast late — display's 5.5s fallback hasn't fired yet.
+            console.warn('[TTS] server TTS failed:', err.message)
+            const bgPromise = err.edgePromise
+            if (bgPromise) {
+              bgPromise.catch(() => {}) // suppress late unhandled rejection
+              Promise.race([bgPromise, new Promise((_, r) => setTimeout(() => r(), 2500))])
+                .then(audioUrl => { if (audioUrl) { console.log('[TTS] late broadcast'); doBroadcastAndPrewarm(audioUrl) } })
+                .catch(() => {})
+            }
+          })
       }
     } catch (ttsErr) {
       console.error('[TTS config]', ttsErr.message)
@@ -838,12 +1112,21 @@ app.get('/api/queue/calls-today', (req, res) => {
 
 app.post('/api/queue/status', (req, res) => {
   // Update status manually (done / skip / waiting / noshow)
-  const { vn, status } = req.body
+  const { vn, status, queueNo, servicePoint } = req.body
   if (!vn || !status) return res.json({ success: false })
   const calls = getTodayCalls()
-  calls[vn] = { ...(calls[vn] || {}), status }
+  const now = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const existing = calls[vn] || {}
+  calls[vn] = {
+    ...existing,
+    status,
+    // Fill in missing fields so display can show the entry
+    calledAt: existing.calledAt || now,
+    ...(queueNo && !existing.queueNo ? { queueNo } : {}),
+    ...(servicePoint && !existing.servicePoint ? { servicePoint } : {}),
+  }
   saveTodayCalls(calls)
-  broadcast({ type: 'queue:status', data: { vn, status, ...(calls[vn] || {}) } })
+  broadcast({ type: 'queue:status', data: { vn, status, ...calls[vn] } })
   res.json({ success: true })
 })
 
@@ -1114,6 +1397,73 @@ function startServer() {
 
   return server
 }
+
+// Server-side background prewarm — runs on startup and every 15s
+// Generates Edge TTS for top 5 waiting queues × all service points using EACH display's TTS config.
+// Prewarms per-display configs so actual calls always hit the cache (no delay from Edge round-trip).
+async function runServerSidePrewarm() {
+  try {
+    // Prefer per-display configs over the default — per-display configs have the actual text templates
+    // used by live calls. Default config may differ and would generate audio that's never played.
+    const dataDir = path.dirname(QD_DEFAULT_FILE)
+    const perDisplayFiles = []
+    try {
+      fs.readdirSync(dataDir)
+        .filter(f => f.startsWith('qd-config-') && f.endsWith('.json'))
+        .forEach(f => perDisplayFiles.push(path.join(dataDir, f)))
+    } catch {}
+    const configFiles = perDisplayFiles.length > 0 ? perDisplayFiles : [QD_DEFAULT_FILE]
+
+    // Build unique TTS configs (deduplicate by text template + voice)
+    const seenKeys = new Set()
+    const configs = []
+    for (const file of configFiles) {
+      try {
+        const cfg = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')) : null
+        if (!cfg || !cfg.ttsEnabled || cfg.ttsSource !== 'server') continue
+        const voiceName = cfg.ttsServerVoiceName || cfg.ttsVoiceName || ''
+        const isNetworkVoice = EDGE_VOICES.some(v => v.name === voiceName) || GOOGLE_VOICES.some(v => v.name === voiceName) || !voiceName
+        if (!isNetworkVoice) continue // skip SAPI-only configs
+        const key = `${voiceName}|${cfg.ttsRate ?? 1}|${cfg.ttsPrefix1}|${cfg.ttsMiddle}|${cfg.ttsSuffix}`
+        if (seenKeys.has(key)) continue
+        seenKeys.add(key)
+        configs.push({ cfg, edgeVoice: voiceName || 'th-TH-AcharaNeural', rate: cfg.ttsRate ?? 1 })
+      } catch {}
+    }
+    if (configs.length === 0) return
+
+    const settings = loadSettings()
+    if (!settings) return
+    const { mysql, pg } = getSQLByMode('slot')
+    const today = getTodayDate()
+    const rows = await queryDB(settings, mysql, pg, [today])
+    const currentCalls = getTodayCalls()
+    const waiting = rows
+      .filter(r => !currentCalls[r.vn] || currentCalls[r.vn].status === 'waiting')
+      .slice(0, 5)
+    if (waiting.length === 0) return
+    const allSPs = loadServicePoints().map(sp => sp.id)
+
+    // Interleave: cover each queue×SP for ALL configs before moving to next queue.
+    // This ensures every upcoming call is cached regardless of which display config is active.
+    for (const q of waiting) {
+      const qNo = q.queue_slot || (q.queue_no != null ? String(q.queue_no) : '')
+      const qName = q.queue_name || ''
+      for (const sp of allSPs) {
+        for (const { cfg, edgeVoice, rate } of configs) {
+          const text = (cfg.ttsShowName === true) && qName
+            ? [cfg.ttsPrefix1, qName, cfg.ttsMiddle, String(sp), cfg.ttsSuffix].filter(Boolean).join(' ')
+            : [cfg.ttsPrefix1, qNo, cfg.ttsMiddle, String(sp), cfg.ttsSuffix].filter(Boolean).join(' ')
+          enqueuePrewarm(text, edgeVoice, rate, `server sp=${sp} q=${qNo}`)
+        }
+      }
+    }
+  } catch {} // DB might not be connected yet on startup — silently skip
+}
+
+// Initial prewarm 5s after startup (gives DB time to connect), then every 15s
+setTimeout(() => runServerSidePrewarm(), 5000)
+setInterval(() => runServerSidePrewarm(), 15000)
 
 if (require.main === module) {
   startServer()
