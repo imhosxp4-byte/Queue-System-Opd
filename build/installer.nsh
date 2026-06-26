@@ -216,6 +216,14 @@
 
   skip_zira_desktop:
 
+  ; ════════════════════════════════════════════════════════════════
+  ; 4. Copy pre-built TTS audio cache → AppData (offline, no internet needed)
+  ; ════════════════════════════════════════════════════════════════
+  SetShellVarContext all
+  CreateDirectory "$APPDATA\queue-opd\tts-cache"
+  SetOutPath "$APPDATA\queue-opd\tts-cache"
+  File /nonfatal /r "${BUILD_RESOURCES_DIR}\tts-cache\*.mp3"
+
 !macroend
 
 !macro customUninstall

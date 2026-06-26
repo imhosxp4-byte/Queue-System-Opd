@@ -1,6 +1,6 @@
 {
   "name": "queue-opd",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Queue Management System for OPD",
   "main": "out/main/main.js",
   "scripts": {
@@ -11,7 +11,8 @@
     "web": "node server/index.js",
     "build:web": "electron-vite build && node server/index.js",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder"
+    "prebuild-tts": "node scripts/prebuild-tts.js",
+    "dist": "electron-vite build && node scripts/prebuild-tts.js && electron-builder"
   },
   "keywords": [
     "queue",
@@ -83,7 +84,8 @@
       "server/**/*"
     ],
     "extraResources": [
-      { "from": "build/icon.ico", "to": "icon.ico" }
+      { "from": "build/icon.ico", "to": "icon.ico" },
+      { "from": "build/tts-cache", "to": "tts-cache", "filter": ["*.mp3"] }
     ],
     "asarUnpack": [
       "out/renderer/**/*"
