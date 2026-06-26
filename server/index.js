@@ -1036,8 +1036,10 @@ app.post('/api/queue/call', async (req, res) => {
           ? [qdCfg.ttsPrefix1, ttsName, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
           : [qdCfg.ttsPrefix1, displayNo, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
         const voiceName = qdCfg.ttsServerVoiceName || qdCfg.ttsVoiceName || ''
-        // HOST audio — only when Pattara is confirmed installed (checked at startup)
-        if (_hostAudioEnabled) {
+        // HOST audio — only when Pattara installed AND configured voice is SAPI (not Google/Edge)
+        // Google/Edge TTS already broadcasts to display via WebSocket — playing Pattara on top creates double audio
+        const isNetworkTtsVoice = EDGE_VOICES.some(v => v.name === voiceName) || GOOGLE_VOICES.some(v => v.name === voiceName) || !voiceName
+        if (_hostAudioEnabled && !isNetworkTtsVoice) {
           generateSAPITTS(text, 'Microsoft Pattara', qdCfg.ttsRate ?? 1)
             .then(audioUrl => playAudioOnHost(path.join(TTS_CACHE_DIR, path.basename(audioUrl))))
             .catch(() => {})
