@@ -223,6 +223,8 @@ export default function QueueDisplayPage() {
   const [spQueues, setSpQueues] = useState<Record<string, string>>({})
   const [spNames, setSpNames] = useState<Record<string, string>>({})
   const [rowAnimKeys, setRowAnimKeys] = useState<Record<string, number>>({})
+  // Track call order — most recently called SP moves to top of display
+  const [spCallOrder, setSpCallOrder] = useState<string[]>([])
   const [noShowQueues, setNoShowQueues] = useState<CallEntry[]>([])
   const [clock, setClock] = useState(new Date())
   const [showSettings, setShowSettings] = useState(false)
@@ -235,7 +237,9 @@ export default function QueueDisplayPage() {
   const [audioUnlocked, setAudioUnlocked] = useState(false)
 
   const audioCtx = useRef<AudioContext | null>(null)
-  const audioQueue = useRef<Array<{ url: string; volume: number }>>([])
+  // Display update buffered from queue:called — applied just before audio plays (sync display+audio)
+  const pendingDisplayRef = useRef<Array<{sp:string; queueNo:string; queueName:string; displayConfigId?:string|null; department?:string}>>([])
+  const audioQueue = useRef<Array<{ url: string; volume: number; display?: {sp:string; queueNo:string; queueName:string} }>>([])
   const audioPlaying = useRef(false)
   const audioGeneration = useRef(0)
   // Single reusable element — avoids Android WebView's ~12 HTMLAudioElement per-page hard limit
@@ -447,32 +451,53 @@ export default function QueueDisplayPage() {
       // Filter: department — ถ้าตั้งค่ากรองแผนกไว้ และ event มีข้อมูลแผนก ต้องตรงกัน
       if (cfg.filterDepts.length > 0 && data.department && !cfg.filterDepts.includes(data.department)) return
 
-      setSpQueues(prev => ({ ...prev, [data.servicePoint]: data.queueNo }))
-      setSpNames(prev => ({ ...prev, [data.servicePoint]: (data as any).queueName || '' }))
-      setRowAnimKeys(prev => ({ ...prev, [data.servicePoint]: (prev[data.servicePoint] || 0) + 1 }))
-      if (cfg.blinkEnabled) {
-        const sp = data.servicePoint
-        clearTimeout(blinkTimers.current[sp])
-        setBlinkingSPs(prev => new Set([...prev, sp]))
-        blinkTimers.current[sp] = setTimeout(() => {
-          setBlinkingSPs(prev => { const n = new Set(prev); n.delete(sp); return n })
-        }, cfg.blinkCount * cfg.blinkSpeed * 2 + 400)
-      }
-      if (cfg.ttsEnabled && cfg.ttsSource !== 'server') {
-        playTTS(data.queueNo, data.servicePoint, cfg, (data as any).queueName)
-      } else if (cfg.ttsEnabled && cfg.ttsSource === 'server') {
-        // Server TTS: wait 9s before browser fallback — server audio arrives within 6-8.5s for slow Edge
+      const isServerTts = cfg.ttsEnabled && cfg.ttsSource === 'server'
+
+      if (isServerTts) {
+        // Buffer display update — will be applied just before audio plays (keeps display+audio in sync)
+        pendingDisplayRef.current.push({
+          sp: data.servicePoint,
+          queueNo: data.queueNo,
+          queueName: (data as any).queueName || '',
+          displayConfigId: data.displayConfigId,
+          department: (data as any).department
+        })
+        // Fallback: if queue:audio never arrives (TTS failed), apply display + browser TTS after 9s
         browserTtsPlayedForCall.current = false
         if (serverTtsFallbackTimer.current) clearTimeout(serverTtsFallbackTimer.current)
         const snapData = data, snapCfg = cfg
         serverTtsFallbackTimer.current = setTimeout(() => {
           if (!browserTtsPlayedForCall.current) {
             browserTtsPlayedForCall.current = true
+            // Pop and apply pending display update
+            const pi = pendingDisplayRef.current.findIndex(p => p.sp === snapData.servicePoint && p.queueNo === snapData.queueNo)
+            if (pi >= 0) {
+              const pd = pendingDisplayRef.current.splice(pi, 1)[0]
+              setSpQueues(prev => ({ ...prev, [pd.sp]: pd.queueNo }))
+              setSpNames(prev => ({ ...prev, [pd.sp]: pd.queueName }))
+              setRowAnimKeys(prev => ({ ...prev, [pd.sp]: (prev[pd.sp] || 0) + 1 }))
+            }
             playTTS(snapData.queueNo, snapData.servicePoint, snapCfg, (snapData as any).queueName)
           }
         }, 9000)
-      } else if (cfg.soundEnabled) {
-        playBeep()
+      } else {
+        // Non-server TTS or no TTS — update display immediately
+        setSpQueues(prev => ({ ...prev, [data.servicePoint]: data.queueNo }))
+        setSpNames(prev => ({ ...prev, [data.servicePoint]: (data as any).queueName || '' }))
+        setRowAnimKeys(prev => ({ ...prev, [data.servicePoint]: (prev[data.servicePoint] || 0) + 1 }))
+        if (cfg.blinkEnabled) {
+          const sp = data.servicePoint
+          clearTimeout(blinkTimers.current[sp])
+          setBlinkingSPs(prev => new Set([...prev, sp]))
+          blinkTimers.current[sp] = setTimeout(() => {
+            setBlinkingSPs(prev => { const n = new Set(prev); n.delete(sp); return n })
+          }, cfg.blinkCount * cfg.blinkSpeed * 2 + 400)
+        }
+        if (cfg.ttsEnabled && cfg.ttsSource !== 'server') {
+          playTTS(data.queueNo, data.servicePoint, cfg, (data as any).queueName)
+        } else if (cfg.soundEnabled) {
+          playBeep()
+        }
       }
       setTimeout(() => getCallsToday().then(c => setNoShowQueues(c.filter((x: CallEntry) => x.status === 'skip'))), 800)
     })
@@ -494,6 +519,7 @@ export default function QueueDisplayPage() {
         // Invalidate all in-flight drain sessions + discard stale audio
         audioGeneration.current++
         audioQueue.current = []
+        pendingDisplayRef.current = []
         if (audioEl.current) {
           audioEl.current.onerror = null
           audioEl.current.onended = null
@@ -594,50 +620,52 @@ export default function QueueDisplayPage() {
     audioPlaying.current = true
     while (audioQueue.current.length > 0 && gen === audioGeneration.current) {
       const item = audioQueue.current.shift()!
+      // Apply display update BEFORE playing audio — ensures display shows new queue as announcement starts
+      if (item.display) {
+        const { sp, queueNo, queueName } = item.display
+        setSpQueues(prev => ({ ...prev, [sp]: queueNo }))
+        setSpNames(prev => ({ ...prev, [sp]: queueName }))
+        setRowAnimKeys(prev => ({ ...prev, [sp]: (prev[sp] || 0) + 1 }))
+        if (configRef.current.blinkEnabled) {
+          clearTimeout(blinkTimers.current[sp])
+          setBlinkingSPs(prev => new Set([...prev, sp]))
+          blinkTimers.current[sp] = setTimeout(() => {
+            setBlinkingSPs(prev => { const n = new Set(prev); n.delete(sp); return n })
+          }, configRef.current.blinkCount * configRef.current.blinkSpeed * 2 + 400)
+        }
+      }
       try {
         await playAudioUrl(item.url, item.volume)
       } catch { /* playAudioUrl should never reject — belt-and-suspenders guard */ }
       if (audioQueue.current.length > 0 && gen === audioGeneration.current) {
-        await new Promise(r => setTimeout(r, 600))
+        await new Promise(r => setTimeout(r, 400))
       }
     }
     // Only release lock if we are still the current session
     if (gen === audioGeneration.current) {
       audioPlaying.current = false
-      // Re-drain items that may have been enqueued between our last queue check and lock release
       if (audioQueue.current.length > 0) drainAudioQueue(audioGeneration.current)
     }
   }
 
-  const enqueueAudio = (url: string, volume: number) => {
-    audioQueue.current.push({ url, volume })
+  const enqueueAudio = (url: string, volume: number, display?: {sp:string; queueNo:string; queueName:string}) => {
+    audioQueue.current.push({ url, volume, display })
     drainAudioQueue(audioGeneration.current)
   }
 
-  // WebSocket: async TTS audio ready — enqueue to prevent overlap
+  // WebSocket: async TTS audio ready — queue in order, never interrupt current announcement
   useEffect(() => {
     const off = onQueueAudio(data => {
       const cfg = configRef.current
       if (cfg.displayConfigId && data.displayConfigId && data.displayConfigId !== cfg.displayConfigId) return
       if (cfg.filterDepts.length > 0 && (data as any).department && !cfg.filterDepts.includes((data as any).department)) return
       if (serverTtsFallbackTimer.current) { clearTimeout(serverTtsFallbackTimer.current); serverTtsFallbackTimer.current = null }
-      // Cancel any browser TTS that may have started (fallback fired early due to slow server TTS)
-      // — don't skip server TTS, cancel browser TTS instead to prevent double announcement
       if (window.speechSynthesis?.speaking) window.speechSynthesis.cancel()
       browserTtsPlayedForCall.current = false
-      // Invalidate all old drain sessions + discard queue — new announcement plays immediately
-      audioGeneration.current++
-      audioQueue.current = []
-      if (audioEl.current) {
-        // Only pause — do NOT set src='' here: it queues an error event that fires
-        // after playAudioUrl sets onerror, causing the new play to fail immediately.
-        // playAudioUrl sets the new src itself via audio.src + audio.load().
-        audioEl.current.pause()
-      }
-      // Do NOT reset audioPlayCount here — let it accumulate so the element is
-      // actually recycled every 15 plays (resetting here made the recycle dead code).
-      audioPlaying.current = false
-      enqueueAudio(data.audioUrl, cfg.ttsVolume ?? 1)
+      // Pop matching pending display update (FIFO — paired with this audio)
+      const pending = pendingDisplayRef.current.shift()
+      // Enqueue audio + display update — drain applies display then plays audio in order
+      enqueueAudio(data.audioUrl, cfg.ttsVolume ?? 1, pending ? { sp: pending.sp, queueNo: pending.queueNo, queueName: pending.queueName } : undefined)
     })
     return off
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
