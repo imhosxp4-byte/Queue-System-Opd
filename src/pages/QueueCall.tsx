@@ -53,7 +53,7 @@ export default function QueueCallPage() {
   const [showDeptMenu, setShowDeptMenu] = useState(false)
   const [deptSearch, setDeptSearch] = useState('')
   const deptSearchRef = useRef<HTMLInputElement>(null)
-  const [filterStatus, setFilterStatus] = useState<'all' | 'waiting' | 'calling'>('all')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'waiting' | 'calling' | 'done' | 'skip'>('all')
   const [currentCalled, setCurrentCalled] = useState<{ queueNo: string; servicePoint: string; calledAt?: string } | null>(null)
   const [callTimeMap, setCallTimeMap] = useState<Record<string, string>>({})
   const [clock, setClock] = useState(new Date())
@@ -114,10 +114,10 @@ export default function QueueCallPage() {
   useEffect(() => { loadSP() }, [loadSP])
   useEffect(() => { getDisplayConfigs().then(setDisplayConfigs) }, [])
 
-  // Sync active SP and display for mini page to read as defaults
+  // Sync active SP and display for mini page — always write (even empty) so mini gets fresh values
   useEffect(() => {
-    if (servicePointId) localStorage.setItem('qc_active_sp', servicePointId)
-    if (selectedDisplayId) localStorage.setItem('qc_active_display', selectedDisplayId)
+    localStorage.setItem('qc_active_sp', servicePointId)
+    localStorage.setItem('qc_active_display', selectedDisplayId)
   }, [servicePointId, selectedDisplayId])
 
   const loadQueues = useCallback(async () => {
@@ -163,11 +163,21 @@ export default function QueueCallPage() {
   }, [mode])
 
   useEffect(() => {
-    // Don't clear queues on mode change — show previous data while loading to avoid blank screen
     if (isModeFirstMount.current) {
       isModeFirstMount.current = false
     } else {
-      setFilterDepts([])
+      // Restore saved prefs when switching modes — so saved servicePoint/display/depts come back
+      const saved = loadSavedPrefs()
+      if (saved?.filterDepts?.length) setFilterDepts(saved.filterDepts)
+      else setFilterDepts([])
+      if (saved?.servicePointId) setServicePointId(saved.servicePointId)
+      if (saved?.selectedDisplayId) setSelectedDisplayId(saved.selectedDisplayId)
+      // Clear stale data from the previous mode immediately — otherwise old mode's
+      // queues stay on screen until the new fetch resolves, looking like no refresh happened.
+      // Also set loading=true in the same batch so the empty-state branch doesn't flash
+      // "ไม่พบข้อมูล" before loadQueues() gets a chance to set it itself.
+      setQueues([])
+      setLoading(true)
     }
     setCurrentCalled(null)
     loadQueues()
@@ -190,6 +200,12 @@ export default function QueueCallPage() {
   useEffect(() => {
     const off = onQueueCalled((data) => {
       setCurrentCalled(data)
+      // sync lastCalledVnRef เมื่อเรียกจาก Mini หรือแหล่งอื่น
+      setQueues(prev => {
+        const row = prev.find(q => String(q.queue_slot || q.queue_no || '') === String(data.queueNo))
+        if (row) lastCalledVnRef.current = row.vn
+        return prev
+      })
       isLoadingQueues.current = false
       loadQueues()
     })
@@ -373,17 +389,19 @@ export default function QueueCallPage() {
       // Locked row not waiting (e.g., already calling) — clear lock and fall through
       setLockedVn(null)
     }
-    const next = queues.find(q =>
-      q.status === 'waiting' &&
-      (filterDepts.length === 0 || filterDepts.includes(q.department || ''))
-    )
+    // Use filteredQueues (already sorted by queue_no, dept-filtered) to match displayed order
+    const next = filteredQueues.find(q => q.status === 'waiting')
     if (next) await handleCall(next)
   }
 
   const handleRecall = async () => {
     if (!currentCalled) return
-    // Use stored VN (most precise) or fall back to queueNo — server resolves both
-    const identifier = lastCalledVnRef.current ?? String(currentCalled.queueNo)
+    // ค้นหา VN จาก queues ที่ตรงกับ queueNo ใน box 1 (กำลังให้บริการ)
+    // ป้องกัน lastCalledVnRef ที่อาจเป็น VN เก่าจากคิวก่อนหน้า
+    const callingRow = queues.find(q =>
+      String(q.queue_slot || q.queue_no || '') === String(currentCalled.queueNo)
+    )
+    const identifier = callingRow?.vn ?? lastCalledVnRef.current ?? String(currentCalled.queueNo)
     setCallingId('__recall__')
     try {
       const res = await callQueue(identifier, currentSpName, mode, selectedDisplayId || undefined)
@@ -483,13 +501,23 @@ export default function QueueCallPage() {
   const toggleDept = (dept: string) =>
     setFilterDepts(prev => prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept])
 
-  const filteredQueues = activeQueues.filter(q => {
-    const matchDept = filterDepts.length === 0 || filterDepts.includes(q.department || '')
-    const matchStatus = filterStatus === 'all'
-      ? q.status !== 'skip' && q.status !== 'cleared'
-      : q.status === filterStatus
-    return matchDept && matchStatus
-  })
+  const filteredQueues = (filterStatus === 'done' || filterStatus === 'skip' ? queues : activeQueues)
+    .filter(q => {
+      const matchDept = filterDepts.length === 0 || filterDepts.includes(q.department || '')
+      const matchStatus = filterStatus === 'all' ? true : q.status === filterStatus
+      return matchDept && matchStatus
+    })
+    .sort((a, b) => {
+      // Queue_OPD / Queue_OPD_Room: sort oqueue (queue_no) numerically ascending
+      if (mode === 'opd' || mode === 'cur_dep') {
+        const an = parseInt(String(a.queue_no ?? ''), 10)
+        const bn = parseInt(String(b.queue_no ?? ''), 10)
+        if (!isNaN(an) && !isNaN(bn)) return an - bn
+        if (!isNaN(an)) return -1
+        if (!isNaN(bn)) return 1
+      }
+      return 0
+    })
 
   // Count by status — respect dept filter so summary reflects selected room/display
   const deptFilteredQueues = filterDepts.length === 0
@@ -498,7 +526,7 @@ export default function QueueCallPage() {
   const countByStatus = (s: string) => deptFilteredQueues.filter(q => q.status === s).length
 
   const statusLabel: Record<string, string> = {
-    waiting: 'รอเรียก', calling: 'กำลังเรียก', done: 'เสร็จแล้ว', skip: 'ไม่มา'
+    waiting: 'รอเรียก', calling: 'กำลังเรียก', done: 'แล้ว', skip: 'ไม่มา'
   }
   const statusClass: Record<string, string> = {
     waiting: 'badge-waiting', calling: 'badge-calling', done: 'badge-done', skip: 'badge-skip'
@@ -784,9 +812,18 @@ export default function QueueCallPage() {
           </div>
 
           <div className="qc-stats-row">
-            <div className="qc-stat-box stat-waiting"><span>{countByStatus('waiting')}</span><label>คิวรอ</label></div>
-            <div className="qc-stat-box stat-done"><span>{countByStatus('done')}</span><label>ให้บริการแล้ว</label></div>
-            <div className="qc-stat-box stat-skip"><span>{countByStatus('skip')}</span><label>ไม่มา</label></div>
+            <div className={`qc-stat-box stat-waiting${filterStatus === 'waiting' ? ' active' : ''}`}
+              onClick={() => setFilterStatus(v => v === 'waiting' ? 'all' : 'waiting')} style={{ cursor: 'pointer' }}>
+              <span>{countByStatus('waiting')}</span><label>คิวรอ</label>
+            </div>
+            <div className={`qc-stat-box stat-done${filterStatus === 'done' ? ' active' : ''}`}
+              onClick={() => setFilterStatus(v => v === 'done' ? 'all' : 'done')} style={{ cursor: 'pointer' }}>
+              <span>{countByStatus('done')}</span><label>ให้บริการแล้ว</label>
+            </div>
+            <div className={`qc-stat-box stat-skip${filterStatus === 'skip' ? ' active' : ''}`}
+              onClick={() => setFilterStatus(v => v === 'skip' ? 'all' : 'skip')} style={{ cursor: 'pointer' }}>
+              <span>{countByStatus('skip')}</span><label>ไม่มา</label>
+            </div>
           </div>
 
           <label className={`qc-autocall-toggle ${confirmEnabled ? 'on' : ''}`}>
@@ -813,16 +850,16 @@ export default function QueueCallPage() {
         <main className="qc-panel-right">
           <div className="qc-filters card">
             <div className="qc-dept-row">
-            <span className="qc-dept-label">แผนก</span>
+            <span className="qc-dept-label">ห้องตรวจ</span>
             <div className="qc-dept-dropdown" ref={deptMenuRef}>
               <button className={`qc-dept-trigger ${showDeptMenu ? 'open' : ''}`}
                 onClick={() => setShowDeptMenu(v => !v)}>
                 <span className="qc-dept-trigger-text">
                   {filterDepts.length === 0
-                    ? 'None selected'
+                    ? 'ห้องตรวจทั้งหมด'
                     : filterDepts.length === 1
                       ? filterDepts[0]
-                      : `เลือก ${filterDepts.length} แผนก`}
+                      : `เลือก ${filterDepts.length} ห้องตรวจ`}
                 </span>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="qc-dept-caret">
                   <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -854,7 +891,7 @@ export default function QueueCallPage() {
                       <>
                         <label className="qc-dept-item all-item">
                           <input type="checkbox" checked={filterDepts.length === 0} onChange={() => setFilterDepts([])} />
-                          <span>ทุกแผนก</span>
+                          <span>ห้องตรวจทั้งหมด</span>
                           <span className="qc-dept-item-cnt">{activeQueues.length}</span>
                         </label>
                         <div className="qc-dept-divider" />
@@ -866,7 +903,7 @@ export default function QueueCallPage() {
                         <label key={dept} className="qc-dept-item">
                           <input
                             type="checkbox"
-                            checked={filterDepts.includes(dept)}
+                            checked={filterDepts.length === 0 || filterDepts.includes(dept)}
                             onChange={() => toggleDept(dept)}
                           />
                           <span>{dept}</span>
@@ -892,7 +929,7 @@ export default function QueueCallPage() {
             </button>
             </div>
             <div className="qc-filter-tabs">
-              {(['all', 'waiting', 'calling'] as const).map(s => (
+              {(['all', 'waiting', 'calling', 'done', 'skip'] as const).map(s => (
                 <button key={s} className={`qc-tab ${filterStatus === s ? 'active' : ''}`} onClick={() => setFilterStatus(s)}>
                   {s === 'all' ? `ทั้งหมด (${deptFilteredQueues.length})` : `${statusLabel[s]} (${countByStatus(s)})`}
                 </button>
@@ -1041,6 +1078,12 @@ export default function QueueCallPage() {
                             <button className="btn btn-accent qc-recall-btn" onClick={() => handleCall(q)} disabled={!!callingId}>🔁</button>
                             <button className="btn btn-success qc-done-btn" onClick={() => handleStatusChange(q, 'done')}>✓</button>
                           </div>
+                        )}
+                        {(q.status === 'skip' || q.status === 'done') && (
+                          <button className="btn btn-accent qc-recall-btn" onClick={() => handleCall(q)} disabled={!!callingId}
+                            title="เรียกคิวซ้ำ">
+                            {callingId === q.vn ? <span className="spinner" /> : '↻'} เรียกซ้ำ
+                          </button>
                         )}
                       </td>
                     </tr>

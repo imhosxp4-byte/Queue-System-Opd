@@ -1,10 +1,35 @@
-import { app, Tray, Menu, nativeImage, shell } from 'electron'
+import { app, Tray, Menu, nativeImage, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
 import type { Server } from 'http'
 
 const PORT = process.env.PORT || 3200
 let tray: Tray | null = null
 let httpServer: Server | null = null
+let miniWin: BrowserWindow | null = null
+
+function openMiniWindow() {
+  if (miniWin && !miniWin.isDestroyed()) {
+    miniWin.restore()
+    miniWin.focus()
+    return
+  }
+  miniWin = new BrowserWindow({
+    width: 400,
+    height: 640,
+    alwaysOnTop: true,
+    minimizable: true,
+    resizable: true,
+    title: 'เรียกคิว Mini',
+    webPreferences: { nodeIntegration: false, contextIsolation: true }
+  })
+  miniWin.loadURL(`http://localhost:${PORT}/#/queue-mini?electron=1`)
+  // ป้องกันย่อตัวเอง: restore ทันทีเมื่อ minimize
+  miniWin.on('minimize', () => { miniWin?.restore() })
+  miniWin.on('closed', () => { miniWin = null })
+}
+
+// Expose to Express server (runs in same process)
+;(global as Record<string, unknown>).openMiniWindow = openMiniWindow
 
 // Single instance — second launch just opens browser
 if (!app.requestSingleInstanceLock()) {
@@ -55,6 +80,10 @@ app.whenReady().then(() => {
     {
       label: 'เปิด Queue System OPD',
       click: () => shell.openExternal(`http://localhost:${PORT}`)
+    },
+    {
+      label: 'เปิด Mini (ล็อกหน้าจอ)',
+      click: () => openMiniWindow()
     },
     { type: 'separator' },
     {

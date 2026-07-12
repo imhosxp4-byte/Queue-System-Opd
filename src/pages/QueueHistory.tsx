@@ -23,13 +23,10 @@ export default function QueueHistoryPage() {
   const [loading, setLoading] = useState(false)
   const [servicePoints, setServicePoints] = useState<ServicePoint[]>([])
   const [servicePoint, setServicePoint] = useState(sessionStorage.getItem('lastSP') || '')
-  const [filterDept, setFilterDept] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem('qc_filter_depts')
-      const depts: string[] = saved ? JSON.parse(saved) : []
-      return depts.length > 0 ? depts[0] : ''
-    } catch { return '' }
-  })
+  // Default to showing ALL departments — history should show everything by default,
+  // not silently inherit the call page's single-dept filter (which can hide all data
+  // if the done/skip records belong to a different department than what's filtered there)
+  const [filterDept, setFilterDept] = useState<string>('')
   const [callTimeMap, setCallTimeMap] = useState<Record<string, string>>({})
   const [actionId, setActionId] = useState<string | null>(null)
   const [clock, setClock] = useState(new Date())

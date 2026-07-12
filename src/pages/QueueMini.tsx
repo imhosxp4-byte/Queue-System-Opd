@@ -9,13 +9,10 @@ type QueueMode = 'slot' | 'opd' | 'slot_cur' | 'cur_dep'
 export default function QueueMiniPage() {
   const [queues, setQueues] = useState<QueueRow[]>([])
   const [displayConfigs, setDisplayConfigs] = useState<DisplayConfigItem[]>([])
-  // On open: always sync from main page (qc_active_*). User can change manually after opening.
-  const [selectedDisplayId, setSelectedDisplayId] = useState<string>(
-    () => localStorage.getItem('qc_active_display') || ''
-  )
-  const [selectedChannel, setSelectedChannel] = useState<string>(
-    () => localStorage.getItem('qc_active_sp') || ''
-  )
+  // On open: sync from main page via loadDisplays (reads fresh localStorage after async)
+  // These start empty/default and are overwritten by loadDisplays on mount
+  const [selectedDisplayId, setSelectedDisplayId] = useState<string>('')
+  const [selectedChannel, setSelectedChannel] = useState<string>('')
   const [mode, setMode] = useState<QueueMode>(
     () => (localStorage.getItem('qc_mode') as QueueMode) || 'slot'
   )
@@ -27,6 +24,19 @@ export default function QueueMiniPage() {
   const [manualVal, setManualVal] = useState('')
   const [manualLoading, setManualLoading] = useState(false)
   const [qdFilterDepts, setQdFilterDepts] = useState<string[]>([])
+  const [selectedDept, setSelectedDept] = useState<string>(() => {
+    try {
+      const depts: string[] = JSON.parse(localStorage.getItem('qc_filter_depts') || '[]')
+      return depts.length === 1 ? depts[0] : ''
+    } catch { return '' }
+  })
+  const [locked, setLocked] = useState(true)
+  const [listView, setListView] = useState<'' | 'waiting' | 'done' | 'skip'>('')
+  const [confirmEnabled, setConfirmEnabled] = useState(() => localStorage.getItem('qc_confirm') === 'true')
+  const [pendingCall, setPendingCall] = useState<{ vn: string; queueNo: string } | null>(null)
+  // true = running inside Electron BrowserWindow (has ?electron=1 in URL)
+  const isElectronWindow = window.location.hash.includes('electron=1')
+  const [electronOpened, setElectronOpened] = useState(false)
   const lastCalledVnRef = useRef<string | null>(null)
   const currentSpNameRef = useRef<string>('')
   const selectedDisplayIdRef = useRef<string>('')
@@ -34,6 +44,7 @@ export default function QueueMiniPage() {
   const manualRef = useRef<HTMLInputElement>(null)
   const keepFocusRef = useRef(false)
   const keepFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lockedRef = useRef(true)
 
   const selectedDisplay = displayConfigs.find(d => d.id === selectedDisplayId)
   const displayChannels: string[] = selectedDisplay?.channels || []
@@ -45,16 +56,15 @@ export default function QueueMiniPage() {
     try {
       const data = await getDisplayConfigs()
       setDisplayConfigs(data)
-      setSelectedDisplayId(prev => {
-        if (prev && data.find(d => d.id === prev)) return prev
-        const active = localStorage.getItem('qc_active_display') || ''
-        return active && data.find(d => d.id === active) ? active : (data[0]?.id || prev)
-      })
-      // Set channel from main page if not yet set
-      setSelectedChannel(prev => {
-        if (prev) return prev
-        return localStorage.getItem('qc_active_sp') || ''
-      })
+      // Always read fresh from localStorage (main page writes here on every change)
+      const activeDisplay = localStorage.getItem('qc_active_display') || ''
+      const activeSp = localStorage.getItem('qc_active_sp') || ''
+      setSelectedDisplayId(
+        activeDisplay && data.find(d => d.id === activeDisplay)
+          ? activeDisplay
+          : (data[0]?.id || '')
+      )
+      setSelectedChannel(activeSp)
     } catch {}
   }, [])
 
@@ -96,12 +106,50 @@ export default function QueueMiniPage() {
     selectedDisplayIdRef.current = selectedDisplayId
   }, [currentSpName, selectedDisplayId])
 
+  // Sync locked state to ref (for use inside event handlers)
+  useEffect(() => { lockedRef.current = locked }, [locked])
+
+  // Lock = fullscreen (OS blocks minimize in fullscreen — the only reliable browser solution)
+  const handleLockToggle = async () => {
+    if (!locked) {
+      try { await document.documentElement.requestFullscreen() } catch {}
+      setLocked(true)
+    } else {
+      try { if (document.fullscreenElement) await document.exitFullscreen() } catch {}
+      setLocked(false)
+    }
+  }
+
+  // Sync lock state when user exits fullscreen via Esc
+  useEffect(() => {
+    const onFsChange = () => { if (!document.fullscreenElement) setLocked(false) }
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => document.removeEventListener('fullscreenchange', onFsChange)
+  }, [])
+
+  // Auto-open as locked Electron window when loaded in browser (not ?electron=1)
+  useEffect(() => {
+    if (isElectronWindow) return
+    fetch('/api/open-mini')
+      .then(r => r.json())
+      .then(d => { if (d.success) setElectronOpened(true) })
+      .catch(() => {})
+  }, [])
+
   useEffect(() => { loadDisplays() }, [loadDisplays])
   useEffect(() => { loadQueues() }, [loadQueues])
   useEffect(() => { const t = setInterval(loadQueues, 15000); return () => clearInterval(t) }, [loadQueues])
 
   useEffect(() => {
-    const off = onQueueCalled(data => { setCurrentCalled(data); loadQueues() })
+    const off = onQueueCalled(data => {
+      setCurrentCalled(data)
+      setQueues(prev => {
+        const row = prev.find(q => String(q.queue_slot || q.queue_no || '') === String(data.queueNo))
+        if (row) lastCalledVnRef.current = row.vn
+        return prev
+      })
+      loadQueues()
+    })
     return off
   }, [loadQueues])
 
@@ -114,10 +162,18 @@ export default function QueueMiniPage() {
   }, [selectedDisplayId])
 
 
-  // Sync mode changes from main page
+  // Sync display/channel/mode/dept changes from main page in real-time
   useEffect(() => {
     const handler = (e: StorageEvent) => {
       if (e.key === 'qc_mode' && e.newValue) setMode(e.newValue as QueueMode)
+      if (e.key === 'qc_active_display') setSelectedDisplayId(e.newValue || '')
+      if (e.key === 'qc_active_sp') setSelectedChannel(e.newValue || '')
+      if (e.key === 'qc_filter_depts') {
+        try {
+          const depts: string[] = JSON.parse(e.newValue || '[]')
+          setSelectedDept(depts.length === 1 ? depts[0] : '')
+        } catch {}
+      }
     }
     window.addEventListener('storage', handler)
     return () => window.removeEventListener('storage', handler)
@@ -128,7 +184,7 @@ export default function QueueMiniPage() {
     setTimeout(() => setMsg(null), 3000)
   }
 
-  const doCall = async (vn: string, queueNo?: string) => {
+  const executeCall = async (vn: string, queueNo?: string) => {
     window.focus()
     // Schedule focus retries after call — using moveBy(0,0) which Edge allows for popups
     // Covers the ~3s window when display audio starts playing and Edge might push mini behind
@@ -159,26 +215,45 @@ export default function QueueMiniPage() {
     finally { setCallingId(null) }
   }
 
+  const doCall = (vn: string, queueNo?: string) => {
+    if (confirmEnabled) { setPendingCall({ vn, queueNo: queueNo || vn }); return }
+    executeCall(vn, queueNo)
+  }
+
+  const handleConfirm = async () => {
+    if (!pendingCall) return
+    const { vn, queueNo } = pendingCall
+    setPendingCall(null)
+    await executeCall(vn, queueNo)
+  }
+
   const handleCallNext = () => {
-    // Use same dept filter as main page (qc_filter_depts) — prevents calling wrong dept queue
-    let activeDepts: string[] = qdFilterDepts
-    try {
-      const mainDepts: string[] = JSON.parse(localStorage.getItem('qc_filter_depts') || '[]')
-      if (mainDepts.length > 0) activeDepts = mainDepts
-    } catch {}
-    const byDept = (q: QueueRow) => !activeDepts.length || activeDepts.includes(q.department || '')
-    const next = queues.find(q => q.status === 'waiting' && byDept(q))
+    // Sort by oqueue (queue_no) ascending — matches ovst.oqueue order requested by user.
+    // byDeptFilter: specific dept → filter that dept; '' (ทุกห้อง) → filter by display's qdFilterDepts.
+    const next = [...queues]
+      .filter(q => q.status === 'waiting' && byDeptFilter(q))
+      .sort((a, b) => {
+        const an = parseInt(String(a.queue_no || a.queue_slot || ''), 10)
+        const bn = parseInt(String(b.queue_no || b.queue_slot || ''), 10)
+        if (!isNaN(an) && !isNaN(bn)) return an - bn
+        if (!isNaN(an)) return -1
+        if (!isNaN(bn)) return 1
+        return 0
+      })[0]
     if (next) doCall(next.vn, String(next.queue_slot || next.queue_no || ''))
   }
 
   const handleRecall = () => {
     if (!currentCalled) return
-    const identifier = lastCalledVnRef.current ?? String(currentCalled.queueNo)
+    const callingRow = queues.find(q =>
+      String(q.queue_slot || q.queue_no || '') === String(currentCalled.queueNo)
+    )
+    const identifier = callingRow?.vn ?? lastCalledVnRef.current ?? String(currentCalled.queueNo)
     doCall(identifier, String(currentCalled.queueNo))
   }
 
   const handleNoShow = async () => {
-    const cur = queues.find(q => q.status === 'calling')
+    const cur = queues.find(q => q.status === 'calling' && byDeptFilter(q))
     if (!cur) return
     try { await updateQueueStatus(cur.vn, 'skip'); setCurrentCalled(null); loadQueues() } catch {}
   }
@@ -202,6 +277,11 @@ export default function QueueMiniPage() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (pendingCall) {
+        if (e.key === 'Enter' || e.key === 'F1') { e.preventDefault(); handleConfirm() }
+        if (e.key === 'Escape') { e.preventDefault(); setPendingCall(null) }
+        return
+      }
       if (e.key === 'F2') { e.preventDefault(); window.focus(); handleCallNext() }
       if (e.key === 'F3') { e.preventDefault(); window.focus(); handleRecall() }
       if (e.key === 'F4') { e.preventDefault(); handleNoShow() }
@@ -210,8 +290,25 @@ export default function QueueMiniPage() {
     return () => document.removeEventListener('keydown', handler)
   })
 
-  const waiting = queues.filter(q => q.status === 'waiting').length
-  const hasCalling = queues.some(q => q.status === 'calling')
+  const deptOptions = Array.from(new Set(queues.map(q => q.department).filter(Boolean))).sort()
+  const byDeptFilter = (q: QueueRow) => !selectedDept || q.department === selectedDept
+  const waiting = queues.filter(q => q.status === 'waiting' && byDeptFilter(q)).length
+  const hasCalling = queues.some(q => q.status === 'calling' && byDeptFilter(q))
+  const listQueues = listView ? queues.filter(q => q.status === listView && byDeptFilter(q)) : []
+  const listLabel: Record<string, string> = { waiting: 'รอเรียก', done: 'เรียกแล้ว', skip: 'ไม่มา' }
+
+  // Show redirect page when Electron window was opened successfully
+  if (electronOpened) {
+    return (
+      <div className="qm-bg" style={{ alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+        <div style={{ fontSize: 52 }}>✅</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: '#0D47A1' }}>เปิดหน้าต่าง Mini แล้ว</div>
+        <div style={{ fontSize: 13, color: '#546E7A' }}>ปิดหน้าต่างนี้ได้</div>
+        <button style={{ marginTop: 8, padding: '8px 20px', borderRadius: 10, border: 'none', background: '#1565C0', color: '#fff', fontFamily: 'inherit', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+          onClick={() => window.close()}>ปิด</button>
+      </div>
+    )
+  }
 
   return (
     <div className="qm-bg">
@@ -225,8 +322,26 @@ export default function QueueMiniPage() {
             title={mode === 'slot' ? 'HOSxP Queue' : 'OPD Visit'}
           >{mode === 'slot' ? 'HQ' : 'OPD'}</button>
         </div>
-        <span className="qm-clock">{clock.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+        <div className="qm-header-right">
+          <span className="qm-clock">{clock.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+          <button
+            className={`qm-lock-btn${locked ? ' on' : ''}`}
+            onClick={handleLockToggle}
+            title={locked ? 'เต็มจอ (กด Esc เพื่อออก)' : 'ล็อกหน้าจอ — เปิดเต็มจอป้องกันย่อ'}
+          >{locked ? '🔒' : '🔓'}</button>
+        </div>
       </header>
+
+      {/* Room/department selector */}
+      <div className="qm-dept-bar">
+        <span className="qm-dept-label">ห้องตรวจ</span>
+        <select className="qm-dept-select" value={selectedDept} onChange={e => setSelectedDept(e.target.value)}>
+          <option value="">ทุกห้อง ({queues.filter(q => q.status === 'waiting').length})</option>
+          {deptOptions.map(d => (
+            <option key={d} value={d}>{d} ({queues.filter(q => q.status === 'waiting' && q.department === d).length})</option>
+          ))}
+        </select>
+      </div>
 
       {/* Display & channel selectors */}
       <div className="qm-serve-card">
@@ -252,38 +367,107 @@ export default function QueueMiniPage() {
           : <div className="qm-serve-empty">—</div>}
       </div>
 
-      {/* Action buttons */}
-      <div className="qm-actions">
-        <button ref={callNextBtnRef} className="qm-btn qm-btn-next" onClick={handleCallNext}
-          disabled={!!callingId || (!loading && !waiting)}>
-          {loading || callingId ? <span className="qm-spinner" /> : <span>▶</span>}
-          {loading ? 'กำลังโหลด...' : !waiting ? 'ไม่มีคิวรอ' : 'เรียกถัดไป'}
-          <kbd className="qm-kbd">F2</kbd>
-        </button>
-        <div className="qm-actions-row2">
-          <button className="qm-btn qm-btn-recall" onClick={handleRecall} disabled={!!callingId || !currentCalled}>
-            <span>↻</span> เรียกซ้ำ <kbd className="qm-kbd">F3</kbd>
-          </button>
-          <button className="qm-btn qm-btn-noshow" onClick={handleNoShow} disabled={!!callingId || !hasCalling}>
-            <span>✕</span> ไม่มา <kbd className="qm-kbd">F4</kbd>
-          </button>
-        </div>
-      </div>
+      {/* Action buttons OR list view */}
+      {listView ? (
+        <>
+          <div className="qm-list-header">
+            <span className="qm-list-title">{listLabel[listView]}</span>
+            <button className="qm-back-btn" onClick={() => setListView('')}>✕ ปิด</button>
+          </div>
+          <div className="qm-list-wrap">
+            {listQueues.length === 0
+              ? <div className="qm-list-empty">ไม่มีรายการ</div>
+              : listQueues.map(q => (
+                <div key={q.vn} className={`qm-list-item qm-li-${q.status}`}>
+                  <span className="qm-li-qno">{q.queue_slot || q.queue_no || '—'}</span>
+                  <div className="qm-li-info">
+                    <div className="qm-li-name">{q.queue_name || '—'}</div>
+                    <div className="qm-li-meta">{q.department || ''}</div>
+                  </div>
+                  <button
+                    className={`qm-li-call-btn${q.status !== 'waiting' ? ' recall' : ''}`}
+                    disabled={!!callingId}
+                    onClick={() => { doCall(q.vn, String(q.queue_slot || q.queue_no || '')); setListView('') }}
+                  >{q.status === 'waiting' ? '▶' : '↻'}</button>
+                </div>
+              ))
+            }
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="qm-actions">
+            <button ref={callNextBtnRef} className="qm-btn qm-btn-next" onClick={handleCallNext}
+              disabled={!!callingId || (!loading && !waiting)}>
+              {loading || callingId ? <span className="qm-spinner" /> : <span>▶</span>}
+              {loading ? 'กำลังโหลด...' : !waiting ? 'ไม่มีคิวรอ' : 'เรียกถัดไป'}
+              <kbd className="qm-kbd">F2</kbd>
+            </button>
+            <div className="qm-actions-row2">
+              <button className="qm-btn qm-btn-recall" onClick={handleRecall} disabled={!!callingId || !currentCalled}>
+                <span>↻</span> เรียกซ้ำ <kbd className="qm-kbd">F3</kbd>
+              </button>
+              <button className="qm-btn qm-btn-noshow" onClick={handleNoShow} disabled={!!callingId || !hasCalling}>
+                <span>✕</span> ไม่มา <kbd className="qm-kbd">F4</kbd>
+              </button>
+            </div>
+          </div>
+          <form className="qm-manual" onSubmit={handleManualCall}>
+            <input ref={manualRef} className="qm-manual-input" type="text" placeholder="QN / HN / ยิงบาร์โค้ด..."
+              value={manualVal} onChange={e => setManualVal(e.target.value)} disabled={manualLoading} autoFocus />
+            <button className="qm-manual-btn" type="submit" disabled={manualLoading || !manualVal.trim()}>
+              {manualLoading ? <span className="qm-spinner" /> : '📢'}
+            </button>
+          </form>
+          <label className="qm-confirm-toggle">
+            <div className={`qm-toggle-track${confirmEnabled ? ' on' : ''}`}>
+              <input type="checkbox" checked={confirmEnabled} onChange={e => {
+                setConfirmEnabled(e.target.checked)
+                localStorage.setItem('qc_confirm', String(e.target.checked))
+              }} style={{ display: 'none' }} />
+              <div className="qm-toggle-thumb" />
+            </div>
+            <span>ยืนยันก่อนเรียกคิว</span>
+          </label>
+        </>
+      )}
 
-      {/* Manual call */}
-      <form className="qm-manual" onSubmit={handleManualCall}>
-        <input ref={manualRef} className="qm-manual-input" type="text" placeholder="QN / HN / ยิงบาร์โค้ด..."
-          value={manualVal} onChange={e => setManualVal(e.target.value)} disabled={manualLoading} autoFocus />
-        <button className="qm-manual-btn" type="submit" disabled={manualLoading || !manualVal.trim()}>
-          {manualLoading ? <span className="qm-spinner" /> : '📢'}
-        </button>
-      </form>
+      {/* Confirm modal */}
+      {pendingCall && (() => {
+        const row = queues.find(q => q.vn === pendingCall.vn)
+        return (
+          <div className="qm-confirm-overlay" onClick={() => setPendingCall(null)}>
+            <div className="qm-confirm-modal" onClick={e => e.stopPropagation()}>
+              <div className="qm-confirm-no">{pendingCall.queueNo}</div>
+              {row?.queue_name && <div className="qm-confirm-name">{row.queue_name}</div>}
+              {row?.department && <div className="qm-confirm-dept">{row.department}</div>}
+              <div className="qm-confirm-actions">
+                <button className="qm-confirm-cancel" onClick={() => setPendingCall(null)}>
+                  ยกเลิก <kbd className="qm-kbd">Esc</kbd>
+                </button>
+                <button className="qm-confirm-ok" onClick={handleConfirm} disabled={!!callingId}>
+                  {callingId ? <span className="qm-spinner" /> : '📢'} ยืนยัน <kbd className="qm-kbd">Enter</kbd>
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
-      {/* Stats */}
+      {/* Stats — clickable to open list view */}
       <div className="qm-stats">
-        <div className="qm-stat waiting"><span>{waiting}</span><label>รอเรียก</label></div>
-        <div className="qm-stat done"><span>{queues.filter(q => q.status === 'done').length}</span><label>แล้ว</label></div>
-        <div className="qm-stat skip"><span>{queues.filter(q => q.status === 'skip').length}</span><label>ไม่มา</label></div>
+        <div className={`qm-stat waiting${listView === 'waiting' ? ' qm-stat-on' : ''}`}
+          onClick={() => setListView(v => v === 'waiting' ? '' : 'waiting')}>
+          <span>{waiting}</span><label>รอเรียก</label>
+        </div>
+        <div className={`qm-stat done${listView === 'done' ? ' qm-stat-on' : ''}`}
+          onClick={() => setListView(v => v === 'done' ? '' : 'done')}>
+          <span>{queues.filter(q => q.status === 'done').length}</span><label>แล้ว</label>
+        </div>
+        <div className={`qm-stat skip${listView === 'skip' ? ' qm-stat-on' : ''}`}
+          onClick={() => setListView(v => v === 'skip' ? '' : 'skip')}>
+          <span>{queues.filter(q => q.status === 'skip').length}</span><label>ไม่มา</label>
+        </div>
       </div>
 
       {msg && <div className={`qm-toast ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</div>}

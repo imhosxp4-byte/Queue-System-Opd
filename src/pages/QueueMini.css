@@ -114,6 +114,25 @@
 .qm-cbtn.ok:hover:not(:disabled) { background: #1976D2; }
 .qm-cbtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* Lock button */
+.qm-lock-btn {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.08);
+  border: 1.5px solid rgba(0,0,0,0.12);
+  border-radius: 7px;
+  font-size: 13px; line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  padding: 0;
+}
+.qm-lock-btn.on {
+  background: rgba(255,152,0,0.15);
+  border-color: #FF9800;
+}
+.qm-lock-btn:hover { background: rgba(255,255,255,0.4); }
+
 /* Minimize button */
 .qm-minimize-btn {
   width: 22px; height: 22px;
@@ -370,6 +389,26 @@
 .qm-stat.done span:first-child    { color: #2E7D32; }
 .qm-stat.skip span:first-child    { color: #C62828; }
 
+/* List view header */
+.qm-list-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 2px 2px 4px;
+  flex-shrink: 0;
+}
+.qm-list-title {
+  font-size: 13px; font-weight: 800; color: #0D47A1;
+}
+
+/* Stat selected state */
+.qm-stat.qm-stat-on {
+  background: rgba(255,255,255,0.9);
+  box-shadow: 0 0 0 2px #1565C0, 0 4px 14px rgba(13,71,161,0.18);
+  transform: translateY(-1px);
+}
+.qm-stat.waiting.qm-stat-on { box-shadow: 0 0 0 2px #F57F17; }
+.qm-stat.done.qm-stat-on    { box-shadow: 0 0 0 2px #2E7D32; }
+.qm-stat.skip.qm-stat-on    { box-shadow: 0 0 0 2px #C62828; }
+
 /* Queue list view */
 .qm-list-wrap {
   flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;
@@ -475,3 +514,114 @@
 .qm-dept-mismatch-no   { font-size: 36px; font-weight: 900; color: #FF9800; line-height: 1; letter-spacing: -1px; }
 .qm-dept-mismatch-dept { font-size: 11px; color: rgba(255,255,255,0.6); margin: 5px 0 3px; }
 .qm-dept-mismatch-msg  { font-size: 11px; font-weight: 700; color: #FFCC02; }
+
+/* ── Confirm toggle ─────────────────────────────── */
+.qm-confirm-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: #546E7A;
+  font-weight: 600;
+  user-select: none;
+}
+.qm-toggle-track {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  background: #B0BEC5;
+  border-radius: 9px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.qm-toggle-track.on { background: #1565C0; }
+.qm-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  transition: left 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.qm-toggle-track.on .qm-toggle-thumb { left: 16px; }
+
+/* ── Confirm overlay / modal ────────────────────── */
+.qm-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.qm-confirm-modal {
+  background: #fff;
+  border-radius: 18px;
+  padding: 24px 28px 20px;
+  text-align: center;
+  min-width: 220px;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.35);
+  animation: qm-pop 0.18s cubic-bezier(0.34,1.56,0.64,1);
+}
+.qm-confirm-no {
+  font-size: 56px;
+  font-weight: 900;
+  color: #1565C0;
+  line-height: 1;
+  letter-spacing: -2px;
+  margin-bottom: 6px;
+}
+.qm-confirm-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1A237E;
+  margin-bottom: 2px;
+}
+.qm-confirm-dept {
+  font-size: 11px;
+  color: #78909C;
+  margin-bottom: 16px;
+}
+.qm-confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 16px;
+}
+.qm-confirm-cancel {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1.5px solid #CFD8DC;
+  background: #fff;
+  color: #546E7A;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.qm-confirm-cancel:hover { background: #ECEFF1; }
+.qm-confirm-ok {
+  padding: 8px 18px;
+  border-radius: 10px;
+  border: none;
+  background: #1565C0;
+  color: #fff;
+  font-family: inherit;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.qm-confirm-ok:hover:not(:disabled) { background: #0D47A1; }
+.qm-confirm-ok:disabled { opacity: 0.6; cursor: not-allowed; }

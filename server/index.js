@@ -826,7 +826,7 @@ LEFT JOIN patient pt ON pt.hn = ov.hn
 LEFT JOIN pttype p ON p.pttype = ov.pttype
 LEFT JOIN kskdepartment k ON k.depcode = ov.main_dep
 WHERE ov.vstdate = ?
-ORDER BY k.department, ov.oqueue`
+ORDER BY k.department, (ov.oqueue + 0), ov.oqueue`
 
 const OPD_SQL_PG = `
 SELECT ov.vstdate, ov.vsttime,
@@ -845,7 +845,7 @@ LEFT JOIN patient pt ON pt.hn = ov.hn
 LEFT JOIN pttype p ON p.pttype = ov.pttype
 LEFT JOIN kskdepartment k ON k.depcode = ov.main_dep
 WHERE ov.vstdate = $1
-ORDER BY k.department, ov.oqueue`
+ORDER BY k.department, (CASE WHEN ov.oqueue::text ~ '^[0-9]+$' THEN ov.oqueue::text::bigint ELSE 0 END), ov.oqueue`
 
 // ─── Current Department SQL (cur_dep mode — ห้องตรวจปัจจุบัน) ────────────────
 
@@ -1322,6 +1322,15 @@ app.get('/api/server-ip', (req, res) => {
     if (ip) break
   }
   res.json({ ip: ip || 'localhost', port: PORT })
+})
+
+app.get('/api/open-mini', (req, res) => {
+  if (typeof global.openMiniWindow === 'function') {
+    global.openMiniWindow()
+    res.json({ success: true })
+  } else {
+    res.json({ success: false, message: 'browser-mode' })
+  }
 })
 
 // Fallback: serve index.html for SPA routing (Express 4 & 5 compatible)

@@ -292,7 +292,7 @@
 
 /* ── Left panel ── */
 .qc-panel-left {
-  width: 296px; flex-shrink: 0;
+  width: 240px; flex-shrink: 0;
   display: flex; flex-direction: column; gap: 10px;
   overflow-y: auto; min-height: 0;
 }
@@ -328,15 +328,15 @@
   box-shadow: 0 4px 12px rgba(60,140,140,0.2); flex-shrink: 0;
   border: 1px solid rgba(255,255,255,0.7);
 }
-.qc-serve-no { font-size: 72px; font-weight: 900; color: #0D3D4A; line-height: 1; letter-spacing: -2px; text-shadow: 0 2px 8px rgba(255,255,255,0.5); }
+.qc-serve-no { font-size: 62px; font-weight: 900; color: #0D3D4A; line-height: 1; letter-spacing: -2px; text-shadow: 0 2px 8px rgba(255,255,255,0.5); }
 .qc-serve-time { font-size: 14px; font-weight: 800; color: #0D47A1; background: rgba(21,101,192,0.15); border: 1px solid rgba(21,101,192,0.3); border-radius: 8px; padding: 4px 10px; white-space: nowrap; flex-shrink: 0; }
 .qc-serve-empty { font-size: 56px; font-weight: 900; color: rgba(15,65,78,0.22); line-height: 1; padding: 8px 0; }
 
 /* Action buttons */
 .qc-btn-action {
   width: 100%; display: flex; align-items: center; justify-content: center;
-  gap: 10px; padding: 15px 16px; border: none; border-radius: 12px;
-  font-family: inherit; font-size: 18px; font-weight: 800;
+  gap: 8px; padding: 11px 12px; border: none; border-radius: 12px;
+  font-family: inherit; font-size: 16px; font-weight: 800;
   cursor: pointer; transition: all 0.15s; flex-shrink: 0;
   box-shadow: 0 2px 8px rgba(0,0,0,0.12);
 }
@@ -414,6 +414,10 @@
 .stat-waiting span { color: #E67E00; }
 .stat-done span    { color: #00897B; }
 .stat-skip span    { color: #C62828; }
+.qc-stat-box.active { box-shadow: 0 0 0 2.5px #1565C0, 0 4px 16px rgba(21,101,192,0.25); background: rgba(255,255,255,0.75); }
+.qc-stat-box.stat-waiting.active { box-shadow: 0 0 0 2.5px #E67E00; }
+.qc-stat-box.stat-done.active    { box-shadow: 0 0 0 2.5px #00897B; }
+.qc-stat-box.stat-skip.active    { box-shadow: 0 0 0 2.5px #C62828; }
 
 /* Auto-call toggle */
 .qc-autocall-toggle {
