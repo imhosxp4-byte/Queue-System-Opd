@@ -123,6 +123,22 @@ if (!fs.existsSync(QD_DEFAULT_FILE_SEED))
 if (!fs.existsSync(QD_DISPLAY_CONFIG_SEED))
   fs.writeFileSync(QD_DISPLAY_CONFIG_SEED, JSON.stringify(DEFAULT_QD_CONFIG, null, 2), 'utf-8')
 
+// ─── TTS queue-number formatter ───────────────────────────────────────────────
+// "MA001" → "M A 1"  (spell prefix letters, strip leading zeros)
+// "GP-001" → "G P 1"
+// "001"    → "1"
+// "1"      → "1"  (plain number, no change)
+function formatQueueNoForTTS(queueNo) {
+  if (!queueNo) return queueNo
+  const s = String(queueNo)
+  const match = s.match(/^([A-Za-z\-]*)(\d+)$/)
+  if (!match) return s
+  const prefix  = match[1].replace(/-/g, '')          // strip dashes, keep letters
+  const digits  = match[2].split('').join(' ')         // "001" → "0 0 1" (อ่านทุก digit รวม leading zero)
+  const spelled = prefix.split('').join(' ')           // "MA" → "M A"
+  return [spelled, digits].filter(Boolean).join(' ')
+}
+
 // ─── Settings helpers ─────────────────────────────────────────────────────────
 
 function loadSettings() {
@@ -571,7 +587,7 @@ app.post('/api/tts/prewarm', (req, res) => {
       for (const q of queues.slice(0, 3)) {
         const text = (qdCfg.ttsShowName === true) && q.name
           ? [qdCfg.ttsPrefix1, q.name, qdCfg.ttsMiddle, String(sp), qdCfg.ttsSuffix].filter(Boolean).join(' ')
-          : [qdCfg.ttsPrefix1, q.no, qdCfg.ttsMiddle, String(sp), qdCfg.ttsSuffix].filter(Boolean).join(' ')
+          : [qdCfg.ttsPrefix1, formatQueueNoForTTS(q.no), qdCfg.ttsMiddle, String(sp), qdCfg.ttsSuffix].filter(Boolean).join(' ')
         if (edgeVoice) {
           enqueuePrewarm(text, edgeVoice, qdCfg.ttsRate ?? 1, `client sp=${sp} q=${q.no}`)
         } else {
@@ -1034,7 +1050,7 @@ app.post('/api/queue/call', async (req, res) => {
         const ttsName = queueName || ''
         const text = (qdCfg.ttsShowName === true) && ttsName
           ? [qdCfg.ttsPrefix1, ttsName, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
-          : [qdCfg.ttsPrefix1, displayNo, qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
+          : [qdCfg.ttsPrefix1, formatQueueNoForTTS(displayNo), qdCfg.ttsMiddle, String(servicePoint), qdCfg.ttsSuffix].filter(Boolean).join(' ')
         const voiceName = qdCfg.ttsServerVoiceName || qdCfg.ttsVoiceName || ''
         // HOST audio — only when Pattara installed AND configured voice is SAPI (not Google/Edge)
         // Google/Edge TTS already broadcasts to display via WebSocket — playing Pattara on top creates double audio
@@ -1066,7 +1082,7 @@ app.post('/api/queue/call', async (req, res) => {
                   const sp = allSPs[si]
                   const nextText = (qdCfg.ttsShowName === true) && nextName
                     ? [qdCfg.ttsPrefix1, nextName, qdCfg.ttsMiddle, String(sp), qdCfg.ttsSuffix].filter(Boolean).join(' ')
-                    : [qdCfg.ttsPrefix1, nextNo, qdCfg.ttsMiddle, String(sp), qdCfg.ttsSuffix].filter(Boolean).join(' ')
+                    : [qdCfg.ttsPrefix1, formatQueueNoForTTS(nextNo), qdCfg.ttsMiddle, String(sp), qdCfg.ttsSuffix].filter(Boolean).join(' ')
                   enqueuePrewarm(nextText, prewarmEdgeVoice, qdCfg.ttsRate ?? 1, `post-call sp=${sp} q=${nextNo}`, true)
                 }
               }
@@ -1464,7 +1480,7 @@ async function runServerSidePrewarm() {
         for (const { cfg, edgeVoice, rate } of configs) {
           const text = (cfg.ttsShowName === true) && qName
             ? [cfg.ttsPrefix1, qName, cfg.ttsMiddle, String(sp), cfg.ttsSuffix].filter(Boolean).join(' ')
-            : [cfg.ttsPrefix1, qNo, cfg.ttsMiddle, String(sp), cfg.ttsSuffix].filter(Boolean).join(' ')
+            : [cfg.ttsPrefix1, formatQueueNoForTTS(qNo), cfg.ttsMiddle, String(sp), cfg.ttsSuffix].filter(Boolean).join(' ')
           enqueuePrewarm(text, edgeVoice, rate, `server sp=${sp} q=${qNo}`)
         }
       }
